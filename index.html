@@ -8,21 +8,10 @@
 </head>
 <body>
   <div id="root"><p style="text-align:center;padding:40px;font-family:sans-serif;color:#64748b">読み込み中...</p></div>
-
-  <!-- React と ReactDOM -->
-  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-
-  <!-- Babel Standalone - 同期ロード確認後に実行 -->
-  <script>
-    window.BABEL_DISABLE_CACHE = 1;
-  </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"
-    onload="console.log('Babel loaded')"
-    onerror="document.getElementById('root').innerHTML='<p style=text-align:center;padding:40px;color:red>Babelの読み込みに失敗しました。ネット接続を確認してください。</p>'">
-  </script>
-
-  <script type="text/babel" data-presets="react,env">
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.22.10/babel.min.js"></script>
+  <script type="text/babel" data-presets="react">
     const { useState, useMemo } = React;
 
 
