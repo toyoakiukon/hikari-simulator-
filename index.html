@@ -1,5 +1,1173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>光回線 乗り換えシミュレーター</title>
+  <style>body{margin:0;padding:0;background:#f1f5f9;}</style>
+</head>
+<body>
+  <div id="root"><p style="text-align:center;padding:40px;font-family:sans-serif;color:#64748b">読み込み中...</p></div>
+
+  <!-- React と ReactDOM -->
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel Standalone - 同期ロード確認後に実行 -->
+  <script>
+    window.BABEL_DISABLE_CACHE = 1;
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"
+    onload="console.log('Babel loaded')"
+    onerror="document.getElementById('root').innerHTML='<p style=text-align:center;padding:40px;color:red>Babelの読み込みに失敗しました。ネット接続を確認してください。</p>'">
+  </script>
+
+  <script type="text/babel" data-presets="react,env">
+    const { useState, useMemo } = React;
+
+
+const CURRENT_PROVIDERS = [
+  { id:"none",        name:"現在なし（新規）",   logo:"➕" },
+  { id:"softbank",    name:"SoftBank光",         logo:"🔵" },
+  { id:"softbankAir", name:"SoftBank Air",        logo:"📶" },
+  { id:"docomo",      name:"ドコモ光",            logo:"🔴" },
+  { id:"docomoHome",  name:"docomo home 5G",      logo:"🏠" },
+  { id:"au",          name:"auひかり",            logo:"🟠" },
+  { id:"biglobe",     name:"BIGLOBEひかり",       logo:"🟢" },
+  { id:"jcom",        name:"J:COM",               logo:"🟡" },
+  { id:"rakuten",     name:"楽天ひかり",          logo:"🔶" },
+  { id:"wimax",       name:"BIC WiMAX",           logo:"📡" },
+  { id:"flets",       name:"フレッツ光",          logo:"⚪" },
+  { id:"other",       name:"その他",              logo:"❓" },
+];
+const HOUSING_TYPES = [
+  { key:"home",   icon:"🏡", label:"戸建て",              desc:"一戸建て・光ファイバー工事あり" },
+  { key:"apt",    icon:"🏢", label:"マンション・集合住宅", desc:"アパート・マンション（既存配線）" },
+  { key:"router", icon:"📡", label:"工事不要ルーター",     desc:"コンセントで即日利用" },
+];
+const SB_EXISTING = ["softbank","softbankAir"];
+const MOBILE_CARRIERS = [
+  { id:"none",     name:"同時契約しない",      logo:"✗" },
+  { id:"softbank", name:"SoftBank（MNP）",     logo:"🔵", mnpPt:15000, type:"softbank" },
+  { id:"ymobile",  name:"Y!mobile（MNP）",     logo:"🟣", mnpPt:16500, type:"softbank" },
+  { id:"docomo",   name:"docomo（MNP）",        logo:"🔴", mnpPt:15000, type:"docomo"  },
+  { id:"au",       name:"au（MNP）",            logo:"🟠", mnpPt:15000, type:"au"      },
+  { id:"uq",       name:"UQモバイル（MNP）",    logo:"🩵", mnpPt:15000, type:"au"      },
+  { id:"rakuten",  name:"楽天モバイル（MNP）",  logo:"🔶", mnpPt:0,     type:"rakuten" },
+];
+
+const PLANS = {
+  softbank:{
+    name:"SoftBank光",logo:"🔵",color:"#003087",supportsTypes:["home","apt"],
+    pricingPlans:[
+      {label:"1Gbps",speed:"最大1Gbps",
+        home:{monthly:5720,jimufee:4950,kojiHi:31680,cancelFee:4180,years:2,kojiNote:"立会工事あり代表例。無派遣工事の場合は4,620円"},
+        apt: {monthly:4180,jimufee:4950,kojiHi:4620, cancelFee:4180,years:2,kojiNote:"無派遣工事の代表例。設備状況により異なる"}},
+      {label:"10Gbps",speed:"最大10Gbps ※提供エリアのみ",
+        home:{monthly:6930,jimufee:4950,kojiHi:31680,cancelFee:4180,years:2},
+        apt: {monthly:6930,jimufee:4950,kojiHi:4620, cancelFee:4180,years:2}},
+    ],
+    setDiscount:{name:"おうち割光セット",smartphones:"SoftBank / Y!mobileの対象プラン",discountPerLine:1100,optionTotal:550,maxLines:10,
+      includesPhone:true,
+      requiredOptions:[{name:"光BBユニット＋Wi-Fiマルチパック＋BBフォン（セット）",fee:550}],
+      note:"指定オプション3種への加入必須（月額550円〜）。BBフォン（ひかり電話）が含まれるため固定電話加入時は料金が重複しません。\nあんしん交換保証加入または指定窓口で事務手数料1,100円割引（4,950円→3,850円）。",jimufeeDiscount:1100},
+    kojiTabs:[
+      {label:"戸建て",items:[
+        {name:"立会あり（代表例）",fee:31680,note:"屋外・宅内工事。新規の大半"},
+        {name:"立会なし（無派遣）",fee:4620,note:"既設備あり・遠隔工事"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"乗り換え新規キャンペーンで実質無料（月割相殺）"},
+      {label:"マンション",items:[
+        {name:"無派遣工事（代表例）",fee:4620,note:"既設備あり・遠隔工事"},
+        {name:"派遣工事あり",fee:31680,note:"宅内設備新設が必要な場合"},
+        {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
+      ],note:"設備状況により異なります"},
+      {label:"テレビ工事費",items:[
+        {name:"ネット同時・1台",fee:13200,note:"ネット開通工事と同時が割安"},
+        {name:"ネット同時・共聴設備あり",fee:29700,note:"2台以上または共聴が必要な場合"},
+        {name:"テレビ単独・1台",fee:21450,note:"ネット開通後に単独申込は割高"},
+        {name:"テレビ単独・共聴設備あり",fee:37950,note:"後から申込・共聴ありで最も割高"},
+        {name:"4台目以降（1台ごと）",fee:5500,note:"追加接続料。当日現地払い"},
+        {name:"土日祝日工事割増",fee:3300,note:"テレビ工事も同様に追加加算"},
+        {name:"テレビ視聴サービス登録料（初回）",fee:3080,note:"スカパーJSATへの契約料"},
+        {name:"月額（伝送＋視聴）",fee:990,note:"内訳：伝送495円＋視聴495円（月額）"},
+      ],note:"アンテナ不要で地デジ・BS視聴可能。スカパー！専門chは別途"},
+      {label:"固定電話",items:[
+        {name:"月額（光電話N）",fee:550,note:"通常の固定電話番号"},
+        {name:"月額（ホワイト光電話）",fee:513,note:"SoftBank間通話無料プラン"},
+        {name:"【新規発番】無派遣工事合計",fee:4400,note:"交換機1,100＋基本工事3,300円"},
+        {name:"【新規発番】派遣工事合計",fee:10450,note:"交換機1,100＋基本工事9,350円"},
+        {name:"【新規発番】土日派遣工事合計",fee:13750,note:"交換機1,100＋基本9,350＋土日3,300円"},
+        {name:"【NTT番号移行】無派遣合計",fee:8800,note:"SB工事4,400＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【NTT番号移行】派遣合計",fee:14850,note:"SB工事10,450＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【フレッツ転用・光コラボ事変】工事費",fee:0,note:"0円・番号継続可"},
+        {name:"2番号目 工事費",fee:1100,note:"追加番号工事費1,100円"},
+        {name:"2番号目 月額",fee:110,note:"追加番号月額110円/番号"},
+        {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
+        {name:"ナンバーディスプレイ",fee:220,note:"発信者番号表示"},
+        {name:"キャッチホン",fee:110,note:"通話中の着信"},
+        {name:"留守番電話",fee:330,note:"伝言メッセージ録音"},
+      ],note:"転用・事業者変更（ドコモ光・BIGLOBE光・OCN光等）は工事費0円・番号継続可。NTT加入電話から移行は休止工事費2,200円が別途必要"},
+    ],
+    sbBonus:{newPt:15000,existingPt:15000},
+    campaigns:[
+      {id:"store_norikae",name:"【店頭・乗り換え】家電 33,000円引き",badge:"🏪",type:"norikae",excludeFrom:["none","softbank","softbankAir"],color:"#d97706",maxAmount:33000,isStore:true,desc:"他社から乗り換え＋当社指定家電同時購入で家電33,000円引き。乗り換え工事費サポート31,680円還元も適用可"},
+      {id:"store_new",name:"【店頭・新規】家電 22,000円引き＋新規工事費実質0円",badge:"🏪",type:"newonly",color:"#d97706",maxAmount:22000,isStore:true,desc:"新規契約＋当社指定家電同時購入で家電22,000円引き＋新規工事費実質0円"},
+      {id:"anshin",name:"あんしん乗り換えキャンペーン",badge:"🔄",type:"norikae",excludeFrom:["none","softbank","softbankAir"],color:"#dc2626",maxAmount:100000,desc:"他社違約金・撤去工事費・端末残債を最大10万円まで全額補填（証明書提出必要）"},
+    ],note:"※J:COMなど一部ケーブルライン提携局からの乗り換えはあんしん乗り換え対象外",
+  },
+  docomo:{
+    name:"ドコモ光",logo:"🔴",color:"#E60012",supportsTypes:["home","apt"],
+    pricingPlans:[
+      {label:"1Gbps タイプA",speed:"最大1Gbps（タイプA）",
+        home:{monthly:5720,jimufee:4950,kojiHi:22000,cancelFee:4180,years:2,kojiNote:"代表例。新規工事料実質0円特典でdP還元あり（実質無料）"},
+        apt: {monthly:4400,jimufee:4950,kojiHi:11660,cancelFee:4180,years:2,kojiNote:"代表例。設備状況により8,360円の場合あり"}},
+      {label:"1Gbps タイプB",speed:"最大1Gbps（タイプB）",
+        home:{monthly:5940,jimufee:4950,kojiHi:22000,cancelFee:4180,years:2},
+        apt: {monthly:4620,jimufee:4950,kojiHi:11660,cancelFee:4180,years:2}},
+      {label:"10Gbps タイプA",speed:"最大10Gbps（タイプA・提供エリアのみ）",
+        home:{monthly:6380,jimufee:4950,kojiHi:22000,cancelFee:4180,years:2},
+        apt: {monthly:6380,jimufee:4950,kojiHi:11660,cancelFee:4180,years:2}},
+      {label:"10Gbps タイプB",speed:"最大10Gbps（タイプB・提供エリアのみ）",
+        home:{monthly:6600,jimufee:4950,kojiHi:22000,cancelFee:4180,years:2},
+        apt: {monthly:6600,jimufee:4950,kojiHi:11660,cancelFee:4180,years:2}},
+    ],
+    setDiscount:{name:"ドコモ光セット割",smartphones:"docomo対象プラン（ahamoは対象外）",discountPerLine:1100,optionTotal:0,maxLines:10,requiredOptions:[],
+      note:"光電話などのオプション不要。docomoスマホ対象プランとの同時利用のみでOK。※ahamoはドコモ光セット割の対象外。"},
+    kojiTabs:[
+      {label:"戸建て",items:[
+        {name:"配線あり（代表例）",fee:28600,note:"屋内配線を新設または一部変更する場合"},
+        {name:"配線なし（派遣工事）",fee:18260,note:"既存配線を再利用する場合"},
+        {name:"無派遣工事",fee:3300,note:"局内工事のみ。訪問不要"},
+        {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
+      ],note:"新規工事料実質0円特典：工事費相当をdポイントで24回分割還元"},
+      {label:"マンション",items:[
+        {name:"配線あり（代表例）",fee:16500,note:"設備状況により11,660円の場合あり"},
+        {name:"配線なし（派遣工事）",fee:8360,note:"既存配線を再利用する場合"},
+        {name:"無派遣工事",fee:3300,note:"局内工事のみ。訪問不要"},
+        {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
+      ],note:"設備状況により変動。実質無料特典でdP還元あり"},
+      {label:"テレビ工事費",items:[
+        {name:"ネット同時申込",fee:3300,note:"ネット開通工事と同時が最も割安"},
+        {name:"テレビ単独申込",fee:11550,note:"ネット開通後に単独申込"},
+        {name:"テレビ視聴サービス登録料（初回）",fee:3080,note:"スカパーJSATへの契約料"},
+        {name:"月額（伝送＋視聴）",fee:990,note:"2025年12月改定。内訳：伝送495円＋視聴495円（月額）"},
+        {name:"ひかりTV for docomo（別サービス）",fee:2750,note:"全国対応。専門ch含む。チューナーレンタル月550円別途"},
+      ],note:"提供エリア限定。エリア外はひかりTV for docomoを利用"},
+      {label:"固定電話",items:[
+        {name:"月額（ドコモ光電話）",fee:550,note:"固定電話番号。発着信可能"},
+        {name:"【新規発番】無派遣工事合計",fee:4400,note:"交換機1,100＋基本工事3,300円"},
+        {name:"【新規発番】派遣工事合計",fee:12100,note:"交換機1,100＋基本工事11,000円"},
+        {name:"【新規発番】設定依頼込み合計",fee:13200,note:"交換機1,100＋基本11,000＋ルーター設定1,100円"},
+        {name:"【NTT番号移行】無派遣合計",fee:8800,note:"ドコモ工事4,400＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【NTT番号移行】派遣合計",fee:16500,note:"ドコモ工事12,100＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【フレッツ転用・光コラボ事変】工事費",fee:0,note:"0円・番号継続可（ドコモ光内事業者変更含む）"},
+        {name:"2番号目 工事費",fee:1100,note:"追加番号工事費"},
+        {name:"2番号目 月額",fee:110,note:"追加番号月額"},
+        {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
+        {name:"ナンバーディスプレイ",fee:220,note:"発信者番号表示"},
+        {name:"キャッチ電話",fee:110,note:"通話中の着信"},
+        {name:"留守番電話",fee:330,note:"伝言メッセージ録音"},
+        {name:"転送でんわ",fee:220,note:"不在時に転送"},
+      ],note:"転用・事業者変更（SoftBank光・BIGLOBE光・OCN光等）は工事費0円・番号継続可"},
+    ],
+    campaigns:[
+      {id:"bic_norikae",name:"【店頭5/31まで・乗り換え】開通翌月10日以降ビックP 40,000pt",badge:"🎁",type:"norikae",excludeFrom:["none","docomo","docomoHome"],color:"#d97706",maxAmount:40000,isBicPt:true,desc:"他社からの乗り換えで開通後翌月10日以降にビックポイント40,000円分プレゼント（5月31日まで）"},
+      {id:"bic_kaden",name:"【店頭5/31まで】当店指定家電同時購入でさらにビックP 20,000pt",badge:"🎁",type:"norikae",excludeFrom:["none","docomo","docomoHome"],color:"#d97706",maxAmount:20000,isBicPt:true,desc:"当店指定家電を同時購入でビックポイント20,000円分をさらにプレゼント（5月31日まで・乗り換え限定）"},
+      {id:"bic_new",name:"【店頭5/31まで・新規】開通翌月10日以降ビックP 40,000pt",badge:"🎁",type:"newonly",color:"#d97706",maxAmount:40000,isBicPt:true,desc:"新規契約で開通後翌月10日以降にビックポイント40,000円分プレゼント（5月31日まで）"},
+      {id:"bic_new_kaden",name:"【店頭5/31まで・新規】当店指定家電同時購入でさらにビックP 20,000pt",badge:"🎁",type:"newonly",color:"#d97706",maxAmount:20000,isBicPt:true,desc:"当店指定家電を同時購入でビックポイント20,000円分をさらにプレゼント（5月31日まで・新規限定）"},
+      {id:"koji_free",name:"新規工事費実質無料（dP還元）",badge:"🔧",type:"always",color:"#f59e0b",maxAmount:22000,desc:"工事費相当額をdポイントで24回分割還元"},
+    ],note:"※タイプA＝プロバイダ料込み。タイプB＝プロバイダ料別途。ahamoはセット割対象外",
+  },
+  au:{
+    name:"auひかり",logo:"🟠",color:"#FF6600",supportsTypes:["home","apt"],
+    pricingPlans:[
+      {label:"1Gbps",speed:"最大1Gbps",
+        home:{monthly:5610,jimufee:3300,kojiHi:41250,cancelFee:14300,years:3,kojiNote:"工事費は月割割引で実質無料"},
+        apt: {monthly:4455,jimufee:3300,kojiHi:33000,cancelFee:14300,years:3,kojiNote:"工事費は月割割引で実質無料"}},
+      {label:"5Gbps",speed:"最大5Gbps ※提供エリアのみ",
+        home:{monthly:5610,jimufee:3300,kojiHi:41250,cancelFee:14300,years:3,kojiNote:"工事費は月割割引で実質無料"},apt:null},
+      {label:"10Gbps",speed:"最大10Gbps ※提供エリアのみ",
+        home:{monthly:6468,jimufee:3300,kojiHi:41250,cancelFee:14300,years:3,kojiNote:"工事費は月割割引で実質無料"},apt:null},
+    ],
+    setDiscount:{name:"auスマートバリュー / UQ自宅セット割",smartphones:"au / UQモバイルの対象プラン",discountPerLine:1100,optionTotal:770,maxLines:10,
+      requiredOptions:[{name:"ひかり電話（固定電話サービス）",fee:770}],
+      note:"ひかり電話（月額770円）の契約が必須。割引1,100円−ひかり電話770円＝実質+330円/月の節約。⚠️ 店頭家電値引きはauスマートバリューまたはUQ自宅セット割加入が必須。"},
+    auBonus:{ mnpNote:"au/UQモバイルMNPで15,000pt（au系回線に切り替えの場合）" },
+    kojiTabs:[
+      {label:"戸建て",items:[
+        {name:"新規工事費（代表例）",fee:41250,note:"独自回線のため工事必須。月割で実質無料"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"月割割引（初期費用相当額割引）で実質無料。分割中に解約すると残債発生"},
+      {label:"マンション",items:[
+        {name:"新規工事費（代表例）",fee:33000,note:"23回払いで月割相殺・実質無料"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"月割割引で実質無料。分割中に解約すると残債発生"},
+      {label:"テレビ工事費",items:[
+        {name:"工事費",fee:0,note:"工事不要（STBをテレビに接続するだけ）"},
+        {name:"初回登録料（初回のみ）",fee:880,note:"auひかりテレビサービス登録料"},
+        {name:"STBレンタル月額",fee:550,note:"セットトップボックス（STA3000等）"},
+        {name:"ジャンルパック（1ジャンル）月額",fee:1628,note:"6ジャンルから1つ選択。最大2ヶ月無料"},
+        {name:"オールジャンルパック月額",fee:2728,note:"47ch見放題。最大2ヶ月無料"},
+      ],note:"auひかりのテレビサービスは地デジ・BSのリアルタイム視聴非対応（VOD専門ch）。地デジはTVアンテナ入力で視聴"},
+      {label:"固定電話",items:[
+        {name:"月額（auひかり電話）",fee:770,note:"auスマートバリューの適用条件"},
+        {name:"⚠️ au独自番号は移行不可",fee:0,note:"KDDI発番の番号は解約で消滅。移行不可"},
+        {name:"⚠️ NTT由来番号は移行可能",fee:0,note:"昔アナログ→auに移した番号はNTTに戻して移行可能"},
+        {name:"【NTT番号戻し】アナログ戻し工事",fee:11660,note:"NTTへのアナログ戻し工事費"},
+        {name:"【NTT番号戻し】新規契約料",fee:880,note:"NTT新規契約料"},
+        {name:"他社移行例（ドコモ光）合計目安",fee:29040,note:"アナログ戻し11,660＋契約料880＋ドコモ工事16,500円"},
+        {name:"ナンバーディスプレイ",fee:220,note:"発信者番号表示"},
+        {name:"キャッチホン",fee:110,note:"通話中の着信"},
+        {name:"留守番電話",fee:330,note:"伝言メッセージ録音"},
+        {name:"ナンバーリクエスト",fee:110,note:"番号非通知の着信拒否"},
+      ],note:"⚠️ auスマートバリュー適用にはひかり電話（770円/月）の契約が必須。au独自発番の番号は他社移行不可（解約で消滅）"},
+    ],
+    campaigns:[
+      {id:"store_smart",name:"【店頭5/31まで】家電 44,000円引き ※スマートバリュー加入必須",badge:"🏪",type:"smartvalue",color:"#d97706",maxAmount:44000,isStore:true,desc:"新規契約＋auスマートバリューまたはUQ自宅セット割ご加入＋当社指定家電同時購入で44,000円引き（5月31日まで）"},
+      {id:"norikae_cb",name:"乗り換えキャッシュバック 25,000円",badge:"🔄",type:"norikae",excludeFrom:["none","au"],color:"#dc2626",maxAmount:25000,desc:"他社回線からauひかりへの乗り換えで25,000円キャッシュバック"},
+      {id:"3mo_free",name:"開通後最大3ヶ月月額0円",badge:"🎁",type:"always",color:"#16a34a",maxAmount:16830,desc:"新規開通後最大3ヶ月間の月額料金が無料"},
+    ],note:"※独自回線エリア外はNTT回線利用。解約金最大14,300円（3年縛り）",
+  },
+  biglobe:{
+    name:"BIGLOBE光",logo:"🟢",color:"#0099CC",supportsTypes:["home","apt"],
+    pricingPlans:[
+      {label:"1Gbps",speed:"最大1Gbps",
+        home:{monthly:5478,jimufee:3300,kojiHi:19800,cancelFee:8800,years:3},
+        apt: {monthly:4378,jimufee:3300,kojiHi:8360, cancelFee:8800,years:3}},
+      {label:"10Gbps",speed:"最大10Gbps ※提供エリアのみ",
+        home:{monthly:6160,jimufee:3300,kojiHi:19800,cancelFee:8800,years:3},
+        apt: {monthly:6160,jimufee:3300,kojiHi:8360, cancelFee:8800,years:3}},
+    ],
+    setDiscount:{name:"auスマートバリュー / UQ自宅セット割",smartphones:"au / UQモバイルの対象プラン",discountPerLine:1100,optionTotal:660,maxLines:10,
+      requiredOptions:[{name:"BIGLOBE光電話（auスマートバリュー適用時）",fee:660}],
+      note:"auスマートバリュー適用にはBIGLOBE光電話（660円/月）が必要。⚠️ 店頭家電値引きはauスマートバリューまたはUQ自宅セット割加入が必須。"},
+    auBonus:{ mnpNote:"au/UQモバイルMNPで15,000pt（au系回線に切り替えの場合）" },
+    kojiTabs:[
+      {label:"戸建て",items:[
+        {name:"配線あり（最大）",fee:28600,note:"屋内配線を新設または変更する場合"},
+        {name:"配線なし",fee:18260,note:"既存配線を一部利用する場合"},
+        {name:"無派遣工事",fee:3300,note:"既設備あり・遠隔工事"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"新規工事費実質無料特典：分割払い相当をBIGLOBE料金から月割値引き"},
+      {label:"マンション",items:[
+        {name:"配線あり（最大）",fee:28600,note:"屋内配線を新設または変更する場合"},
+        {name:"配線なし",fee:18260,note:"既存配線を一部利用する場合"},
+        {name:"無派遣工事",fee:3300,note:"既設備あり・遠隔工事"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"転用・事業者変更は工事費不要（タイプ変更がある場合は追加工事費あり）"},
+      {label:"テレビ工事費",items:[
+        {name:"1台配線工事",fee:7150,note:"スカパーJSATが工事担当（当日現地払い）"},
+        {name:"共聴設備あり（複数台）",fee:25080,note:"共聴設備接続工事。後から追加不可のため要選択"},
+        {name:"ブースター追加工事",fee:13200,note:"電波が弱い場合に追加工事が必要な場合あり"},
+        {name:"テレビ視聴サービス登録料（初回）",fee:3080,note:"スカパーJSATへの契約料"},
+        {name:"月額（伝送＋視聴）",fee:990,note:"伝送495円＋視聴495円。台数に関係なく一律（月額）"},
+      ],note:"NTT回線のフレッツ・テレビと同仕組み。工事はスカパーJSAT担当（工事当日現地払い）"},
+      {label:"固定電話",items:[
+        {name:"月額（BIGLOBE光電話）",fee:550,note:"auスマートバリュー適用に必須"},
+        {name:"月額（光電話A）",fee:1650,note:"NTT固定電話との同番号引継ぎプラン"},
+        {name:"【新規発番】無派遣工事合計",fee:4400,note:"交換機1,100＋基本工事3,300円"},
+        {name:"【新規発番】派遣工事合計",fee:9350,note:"交換機1,100＋基本工事8,250円"},
+        {name:"【NTT番号移行】無派遣合計",fee:8800,note:"BIGLOBE工事4,400＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【NTT番号移行】派遣合計",fee:13750,note:"BIGLOBE工事9,350＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【フレッツ転用・光コラボ事変】工事費",fee:0,note:"0円・番号継続可（SoftBank光・ドコモ光・OCN光等から）"},
+        {name:"電話だけ後付け 無派遣",fee:4400,note:"後からひかり電話だけ追加する場合"},
+        {name:"電話だけ後付け 派遣",fee:9350,note:"後からひかり電話だけ追加する場合"},
+        {name:"2番号目 工事費",fee:1100,note:"追加番号工事費"},
+        {name:"2番号目 月額",fee:110,note:"追加番号月額"},
+        {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
+        {name:"ナンバーディスプレイ",fee:220,note:"発信者番号表示"},
+        {name:"キャッチ電話",fee:110,note:"通話中の着信"},
+        {name:"留守番電話",fee:330,note:"伝言メッセージ録音"},
+      ],note:"auスマートバリュー適用にはBIGLOBE光電話（550円/月）の契約が必須。転用・事業者変更は工事費0円・番号継続可"},
+    ],
+    campaigns:[
+      {id:"store_smart",name:"【店頭5/31まで】家電 44,000円引き ※スマートバリュー加入必須",badge:"🏪",type:"smartvalue",color:"#d97706",maxAmount:44000,isStore:true,desc:"新規契約＋auスマートバリューまたはUQ自宅セット割加入（BIGLOBE光電話必須）＋当社指定家電同時購入で44,000円引き（5月31日まで）"},
+    ],
+  },
+  jcom:{
+    name:"J:COM NET",logo:"🟡",color:"#C0392B",supportsTypes:["home","apt"],
+    jcomTvPlans:[
+      {id:"select",    label:"TVセレクト",              home:2970,apt:2200,note:"地デジ・BS基本チャンネル"},
+      {id:"standard",  label:"シン・スタンダード",      home:6050,apt:4950,note:"地デジ・BS・CS・専門ch"},
+      {id:"standardP", label:"シン・スタンダードプラス",home:7150,apt:6050,note:"スタンダード＋追加ch"},
+    ],
+    pricingPlans:[
+      {label:"320Mbps",speed:"最大320Mbps",home:{monthly:4730,jimufee:3300,kojiHi:23760,cancelFee:5500,years:2},apt:{monthly:4730,jimufee:3300,kojiHi:23760,cancelFee:5500,years:2}},
+      {label:"1Gbps",speed:"最大1Gbps",home:{monthly:5280,jimufee:3300,kojiHi:23760,cancelFee:5500,years:2},apt:{monthly:5280,jimufee:3300,kojiHi:23760,cancelFee:5500,years:2}},
+      {label:"10Gbps",speed:"最大10Gbps",home:{monthly:6886,jimufee:3300,kojiHi:23760,cancelFee:5500,years:2},apt:{monthly:6886,jimufee:3300,kojiHi:23760,cancelFee:5500,years:2}},
+    ],
+    setDiscount:{name:"auスマートバリュー（J:COM版）",smartphones:"au / UQモバイルの対象プラン",discountPerLine:1100,optionTotal:0,maxLines:10,
+      requiredOptions:[{name:"J:COM TV・NET・PHONEのうち2サービス以上への加入",fee:0}],
+      note:"【重要】TV・NET・PHONEのうち2サービス以上への加入が必須。NETのみでは適用不可。"},
+    kojiTabs:[
+      {label:"戸建て",items:[
+        {name:"通常工事費",fee:23760,note:"代表例。月割で実質無料キャンペーンあり"},
+        {name:"宅外配線あり",fee:8360,note:"既存配線一部利用の場合"},
+        {name:"自分で設置（セルフ）",fee:3300,note:"機器を自分で接続する場合"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"月額から分割相殺で実質無料キャンペーンあり。短期解約で残債発生"},
+      {label:"マンション",items:[
+        {name:"通常工事費",fee:23760,note:"代表例。月割で実質無料キャンペーンあり"},
+        {name:"宅外配線あり",fee:8360,note:"既存配線一部利用の場合"},
+        {name:"自分で設置（セルフ）",fee:3300,note:"機器を自分で接続する場合"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"ケーブルテレビ回線のため対応エリア限定"},
+      {label:"テレビ工事費",items:[
+        {name:"TV込み基本工事費",fee:47520,note:"NET+TVセット加入時の基本工事費"},
+        {name:"ブースター追加（必要な場合）",fee:13200,note:"電波が弱い場合などに追加工事が必要な場合あり"},
+        {name:"J:COM TV月額（地デジ・BS）",fee:1100,note:"NET+TVセット割引価格"},
+        {name:"スタンダードパック月額",fee:3850,note:"地デジ・BS・CS・専門ch含む"},
+      ],note:"実質0円キャンペーンあり。NET+TV+PHONEのうち2サービス以上でauスマートバリュー対象"},
+      {label:"固定電話",items:[
+        {name:"月額（J:COM PHONE）NET+PHONEセット",fee:770,note:"2026年7月以降1,012円に値上げ予定。NET同時契約時の価格"},
+        {name:"月額（J:COM PHONE）単独契約",fee:1650,note:"NETなしでJ:COM PHONEのみ契約の場合"},
+        {name:"月額（J:COM PHONEひかり）",fee:550,note:"IP電話プラン。NET+PHONEひかりセット価格"},
+        {name:"【新規発番】集合住宅 工事合計",fee:21780,note:"事務手数料3,300＋集合工事費18,480円"},
+        {name:"【新規発番】戸建て 工事合計",fee:50820,note:"事務手数料3,300＋戸建工事費47,520円"},
+        {name:"【NTT番号移行】集合住宅 合計",fee:23980,note:"J:COM工事21,780＋NTT休止2,200円"},
+        {name:"【NTT番号移行】戸建て 合計",fee:53020,note:"J:COM工事50,820＋NTT休止2,200円"},
+        {name:"⚠️ J:COM独自番号は移行不可",fee:0,note:"J:COM発番の番号は解約で消滅。NTT由来番号は移行可能"},
+        {name:"⚠️ NTT由来番号の他社移行",fee:11660,note:"NTTアナログ戻し11,660円＋移行先工事費が必要"},
+        {name:"2番号目",fee:0,note:"要個別見積もり"},
+        {name:"土日祝日工事割増",fee:0,note:"要個別見積もり"},
+        {name:"ナンバーディスプレイ",fee:220,note:"発信者番号表示"},
+        {name:"キャッチホン",fee:110,note:"通話中の着信"},
+        {name:"留守番電話",fee:330,note:"伝言メッセージ録音"},
+      ],note:"J:COMでauスマートバリューを組むにはTV・NET・PHONEのうち2サービス以上の加入が必須。工事費実質0円キャンペーンあり"},
+    ],
+    campaigns:[
+      {id:"tv_set",name:"テレビ+ネットセット特典",badge:"📺",type:"always",color:"#0369a1",maxAmount:0,unit:"セット特典",desc:"J:COM TVとのセット契約で地上/BS/CSが視聴可能"},
+      {id:"3mo_free",name:"3ヶ月基本料金無料",badge:"🎁",type:"always",color:"#16a34a",maxAmount:15180,desc:"新規契約で開通後3ヶ月間の基本料金が無料"},
+    ],note:"※対応エリア限定。auスマートバリューはTV/NET/PHONEのうち2サービス加入が必須",
+  },
+  rakuten:{
+    name:"楽天ひかり",logo:"🔶",color:"#E91E8C",supportsTypes:["home","apt"],
+    pricingPlans:[
+      {label:"1Gbps",speed:"最大1Gbps",
+        home:{monthly:5280,jimufee:880,kojiHi:19800,cancelFee:0,years:0,kojiNote:"事務手数料：新規880円 / フレッツ転用・事業者変更は1,980円"},
+        apt: {monthly:4180,jimufee:880,kojiHi:3300, cancelFee:0,years:0,kojiNote:"事務手数料：新規880円 / フレッツ転用・事業者変更は1,980円"}},
+    ],
+    setDiscount:{name:"楽天ひかりセット割",smartphones:"楽天モバイル「Rakuten最強プラン」",discountPerLine:1078,optionTotal:0,maxLines:1,requiredOptions:[],
+      note:"楽天モバイル「Rakuten最強プラン」との同時利用で毎月1,078円相当を楽天ポイントで還元。オプション不要・同一楽天IDでの申込みのみ。",isPointReturn:true},
+    kojiTabs:[
+      {label:"戸建て",items:[
+        {name:"配線あり（代表例）",fee:22000,note:"屋内配線を新設または変更する場合"},
+        {name:"配線なし",fee:11660,note:"既存配線を一部利用する場合"},
+        {name:"無派遣工事",fee:3300,note:"既設備あり・遠隔工事"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"フレッツ光からの転用・他社光コラボからの事業者変更は工事費不要"},
+      {label:"マンション",items:[
+        {name:"配線あり（代表例）",fee:11660,note:"設備状況により変動"},
+        {name:"配線なし",fee:5940,note:"既存配線を一部利用する場合"},
+        {name:"無派遣工事",fee:3300,note:"既設備あり・遠隔工事"},
+      ],note:"事務手数料：新規880円 / フレッツ転用・事業者変更1,980円"},
+      {label:"テレビ工事費",items:[
+        {name:"注意：楽天ひかりはNTTフレッツ・テレビを別途契約",fee:0,note:"楽天が提供するサービスではない"},
+        {name:"フレッツ・テレビ工事費（目安）",fee:13530,note:"NTT東西への申込が必要。楽天との別契約"},
+        {name:"月額（伝送＋視聴）",fee:990,note:"NTT東西への月額。楽天からは請求されない（月額）"},
+      ],note:"楽天ひかりのテレビ・電話はNTT東西との別契約が必要。楽天が提供するサービスではない"},
+      {label:"固定電話",items:[
+        {name:"⚠️ NTTひかり電話（楽天との別契約）",fee:0,note:"楽天ひかりは電話サービスを提供しない。NTT東西へ別途申込"},
+        {name:"月額（NTTひかり電話）",fee:550,note:"NTT東西への月額。楽天からは請求されない"},
+        {name:"【新規発番】無派遣工事合計",fee:4400,note:"交換機1,100＋基本工事3,300円"},
+        {name:"【新規発番】派遣工事合計",fee:9350,note:"交換機1,100＋基本工事8,250円"},
+        {name:"【NTT番号移行】無派遣合計",fee:8800,note:"工事4,400＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【NTT番号移行】派遣合計",fee:13750,note:"工事9,350＋同番移行2,200＋NTT休止2,200円"},
+        {name:"【フレッツ転用・光コラボ事変】工事費",fee:0,note:"0円・番号継続可（SoftBank光・ドコモ光等から）"},
+        {name:"電話だけ後付け 無派遣",fee:4400,note:"後からひかり電話だけ追加する場合"},
+        {name:"電話だけ後付け 派遣",fee:9350,note:"後からひかり電話だけ追加する場合"},
+        {name:"2番号目 工事費",fee:1100,note:"追加番号工事費"},
+        {name:"2番号目 月額",fee:110,note:"追加番号月額"},
+        {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
+      ],note:"楽天ひかりの電話はNTT東西との別契約が必要。楽天からは請求されない。転用・事業者変更は工事費0円・番号継続可"},
+    ],
+    campaigns:[
+      {id:"6mo_free",name:"楽天モバイルセットで6ヶ月間月額分ポイント還元",badge:"🎁",type:"always",color:"#dc2626",maxAmount:31680,desc:"楽天モバイル「Rakuten最強プラン」同時申込みで開通後6ヶ月間の月額相当を楽天ポイントで還元"},
+      {id:"pt2x",name:"楽天市場ポイント常時+2倍",badge:"🎯",type:"always",color:"#d97706",maxAmount:0,unit:"ポイント2倍",desc:"楽天ひかり利用中は楽天市場での買い物ポイントが常時2倍（月上限5,000pt）"},
+      {id:"no_cancel",name:"縛りなし・違約金0円",badge:"🔓",type:"always",color:"#16a34a",maxAmount:0,unit:"縛りなし",desc:"2年縛りなし・解約金0円でいつでも解約可能"},
+    ],
+  },
+  softbankAir:{
+    name:"SoftBank Air",logo:"📶",color:"#003087",supportsTypes:["router"],
+    pricingPlans:[
+      {label:"2.1Gbps（通常）",speed:"最大2.1Gbps（理論値）",
+        router:{monthly:5368,jimufee:4950,kojiHi:0,cancelFee:0,years:0,kojiNote:"工事不要・縛りなし。Airターミナル端末代別途（48回払い月1,485円）"}},
+      {label:"2.1Gbps（にねんサポート）",speed:"Airターミナル6 最大にねんサポート適用",
+        router:{monthly:4950,jimufee:4950,kojiHi:0,cancelFee:0,years:0,kojiNote:"24ヶ月目まで月額4,950円。25ヶ月目以降5,368円に戻る"}},
+    ],
+    setDiscount:{name:"おうち割光セット(Air)",smartphones:"SoftBank / Y!mobileの対象プラン",discountPerLine:1100,optionTotal:0,maxLines:10,requiredOptions:[],
+      note:"SoftBank Airはオプション不要。SoftBank/Y!mobile対象プランとの同時利用のみでOK。あんしん交換保証加入または指定窓口で事務手数料1,100円割引（4,950円→3,850円）。",jimufeeDiscount:1100},
+    sbBonus:{newPt:15000,existingPt:15000},
+    campaigns:[
+      {id:"store_norikae",name:"【店頭・新規/乗り換え】最大60,500円＋家電値引き",badge:"🏪",type:"always",color:"#d97706",maxAmount:60500,isStore:true,desc:"新規または他社から乗り換え＋当社指定家電同時購入で最大60,500円＋家電値引き"},
+      {id:"anshin",name:"あんしん乗り換えキャンペーン",badge:"🔄",type:"norikae",excludeFrom:["none","softbank","softbankAir"],color:"#dc2626",maxAmount:100000,desc:"他社回線からの乗り換えで違約金・端末残債を最大10万円補填"},
+    ],
+  },
+  docomoHome:{
+    name:"docomo home 5G",logo:"🏠",color:"#E60012",supportsTypes:["router"],
+    pricingPlans:[
+      {label:"4.2Gbps（通常）",speed:"最大4.2Gbps（理論値）",
+        router:{monthly:5280,jimufee:4950,kojiHi:0,cancelFee:0,years:0,kojiNote:"縛りなし・解約金なし。HR02端末代73,260円別途"}},
+      {label:"4.2Gbps（月々サポート）",speed:"月々サポート適用 実質3,755円/月（最大48ヶ月）",
+        router:{monthly:3755,jimufee:4950,kojiHi:0,cancelFee:0,years:0,kojiNote:"HR02本体：一括1円（5/31まで店頭特典）。月々サポート▲1,525円/月を通信料から値引き。最大48ヶ月間3,755円（初月3,695円）。49ヶ月目以降5,280円。⚠️ 一括1円選択時は家電50,000円引きとの併用不可"}},
+    ],
+    setDiscount:{name:"ドコモ光セット割（home 5G版）",smartphones:"docomo対象プラン（ahamoは対象外）",discountPerLine:1100,optionTotal:0,maxLines:10,requiredOptions:[],
+      note:"docomoスマホ対象プランとの同時利用のみでOK。光電話などのオプション加入不要。※ahamoはセット割対象外。"},
+    campaigns:[
+      {id:"store_kaden",name:"【店頭5/31まで】家電 50,000円引き",badge:"🏪",type:"always",color:"#d97706",maxAmount:50000,isStore:true,desc:"HR02購入＋当社指定家電同時購入で家電50,000円引き。⚠️ HR02一括1円との併用不可（いずれか選択）（5月31日まで）"},
+      {id:"hr02_1yen",name:"【店頭5/31まで】HR02本体 一括1円",badge:"📱",type:"always",color:"#0369a1",maxAmount:73259,desc:"新規契約＋店舗独自値引適用でhome 5G HR02本体（通常73,260円）が一括1円。⚠️ 家電50,000円引きとの併用不可（いずれか選択）（5月31日まで）"},
+      {id:"norikae_pt",name:"乗り換えdポイント最大20,000pt",badge:"🎯",type:"norikae",excludeFrom:["none","docomo","docomoHome"],color:"#dc2626",maxAmount:20000,desc:"他社ホームルーター・光回線からの乗り換えでdポイント最大20,000pt付与"},
+    ],note:"※2026年3月よりドコモショップ・オンラインショップのみで申込み可能",
+  },
+  auSmartPort:{
+    name:"auスマートポート",logo:"🔸",color:"#FF6600",supportsTypes:["router"],
+    pricingPlans:[
+      {label:"440Mbps",speed:"最大440Mbps（理論値）",
+        router:{monthly:5051,jimufee:3300,kojiHi:0,cancelFee:0,years:0,kojiNote:"工事不要・縛りなし・端末代別途"}},
+    ],
+    setDiscount:{name:"auスマートバリュー（ルーター版）",smartphones:"au / UQモバイルの対象プラン",discountPerLine:550,optionTotal:0,maxLines:9,requiredOptions:[],
+      note:"ホームルーターはひかり電話不要。auスマホ対象プランとの同時利用のみでOK。割引額550円/月。"},
+    campaigns:[],
+  },
+  wimax:{
+    name:"BIC WiMAX",logo:"📡",color:"#6B00B3",supportsTypes:["router"],
+    pricingPlans:[
+      {label:"端末一括0円",speed:"最大4.2Gbps（理論値）※提供エリアのみ",
+        router:{monthly:4268,jimufee:3300,kojiHi:0,cancelFee:0,years:0,kojiNote:"端末一括0円。WiMAX+5G割▲682円/月×13ヶ月適用で実質4,268円/月（14ヶ月目以降4,950円）。家電値引き・還元キャンペーン対象外"}},
+      {label:"端末分割払い（36回）",speed:"最大4.2Gbps（理論値）※提供エリアのみ",
+        router:{monthly:5038,jimufee:3300,kojiHi:0,cancelFee:0,years:0,kojiNote:"端末分割770円×36回が月額に追加。分割購入で最大44,000円還元キャンペーン対象"}},
+    ],
+    setDiscount:{name:"auスマートバリュー（WiMAX版）",smartphones:"au / UQモバイルの対象プラン",discountPerLine:550,optionTotal:0,maxLines:9,requiredOptions:[],
+      note:"WiMAXホームルーターはひかり電話不要。auスマホ対象プランとの同時利用のみでOK。割引額550円/月。"},
+    campaigns:[
+      {id:"store_split_44000",name:"【分割購入限定】最大44,000円還元",badge:"🎁",type:"always",color:"#d97706",maxAmount:44000,isStore:true,desc:"端末分割払い購入（770円×36回）の場合のみ最大44,000円還元。端末一括0円の場合は対象外"},
+      {id:"wimax5g_wari",name:"WiMAX+5G割：▲682円×13ヶ月",badge:"💡",type:"always",color:"#16a34a",maxAmount:8866,desc:"一括・分割問わず適用。13ヶ月間682円/月割引（合計8,866円相当）"},
+      {id:"norikae",name:"乗り換え違約金補填",badge:"🔄",type:"norikae",excludeFrom:["none","wimax"],color:"#dc2626",maxAmount:0,unit:"違約金補填",desc:"他社ホームルーター・光回線からの乗り換えで発生した違約金を補填（代理店による）"},
+    ],
+  },
+};
+
+export default function App() {
+  const [currentProvider, setCurrentProvider] = useState(null);
+  const [housingType, setHousingType]         = useState(null);
+  const [step, setStep]                       = useState(1);
+  const [showSetDiscount, setShowSetDiscount] = useState(false);
+  const [selectedPlanIdx, setSelectedPlanIdx] = useState({});
+  const [mobileCarriers, setMobileCarriers]   = useState({});
+  const [expandedPlan, setExpandedPlan]       = useState(null);
+  const [expandedCamp, setExpandedCamp]       = useState(null);
+  const [expandedKoji, setExpandedKoji]       = useState(null);
+  const [kojiTab, setKojiTab]                 = useState({});
+  const [step3Done, setStep3Done]             = useState(false);
+  const [phoneEnabled, setPhoneEnabled]       = useState(false);
+  const [phoneOptions, setPhoneOptions]       = useState({});
+  const [step4Done, setStep4Done]             = useState(false);
+  const [tvEnabled, setTvEnabled]             = useState(false);
+  const [tvKojiPattern, setTvKojiPattern]     = useState({});
+  const [jcomTvPlan, setJcomTvPlan]           = useState("select");
+
+  const availablePlans = useMemo(() =>
+    Object.entries(PLANS).filter(([,p]) => p.supportsTypes.includes(housingType)), [housingType]);
+
+  const getPlanIdx = (k) => selectedPlanIdx[k] ?? 0;
+  const isNewContract = !currentProvider || currentProvider === "none";
+  const isExistingSB  = SB_EXISTING.includes(currentProvider);
+  const totalMNPLines = Object.values(mobileCarriers).reduce((s,v)=>s+v,0);
+  const carrierSummaryArr = Object.entries(mobileCarriers).filter(([,v])=>v>0).map(([id,n])=>{const c=MOBILE_CARRIERS.find(x=>x.id===id);return c?c.name+"×"+n:"";}).filter(Boolean);
+
+  const getApplicableCampaigns = (planKey, campaigns) =>
+    campaigns.filter(c => {
+      if (c.type === "always" || c.type === "smartvalue") return true;
+      if (c.type === "newonly") return isNewContract;
+      if (c.type === "norikae") {
+        if (isNewContract) return false;
+        if (c.excludeFrom && c.excludeFrom.includes(currentProvider)) return false;
+        if (currentProvider === planKey) return false;
+        return true;
+      }
+      return false;
+    });
+
+  /* ─────────────────────────────────────────────────────
+     SoftBankグループ 同時加入ボーナス計算ロジック
+     ① 新規/他社乗り換え + SoftBank光/Air
+        SB MNP  → 15,000pt（MNP）＋ 15,000pt（同時加入）= 30,000pt 即時
+        YM MNP  → 16,500pt（MNP）＋ 15,000pt（同時加入）= 31,500pt 即時
+     ② 既存SoftBank光/Air + SB/YM MNP
+        SB MNP  → 15,000pt（MNP）即時 ＋ 後日15,000 PayPayPt
+        YM MNP  → 16,500pt（MNP）即時 ＋ 後日15,000 PayPayPt
+     他社光（ドコモ光・au等）+ SB/YM MNP
+        → MNP pt のみ（SB:15,000 / YM:16,500）
+        ※ au系はスマートバリュー必須なのでSBスマホとは組合せ不可のため表示なし
+  ───────────────────────────────────────────────────── */
+  const getSBBonus = (planKey) => {
+    const sbCarriers = Object.entries(mobileCarriers).filter(([id,n])=>n>0&&MOBILE_CARRIERS.find(c=>c.id===id&&c.type==="softbank"));
+    if(sbCarriers.length===0) return null;
+    const plan = PLANS[planKey];
+    let totalMnp=0,totalSim=0,totalExist=0,firstC=null;
+    for(const [id,n] of sbCarriers){
+      const carrier=MOBILE_CARRIERS.find(c=>c.id===id);
+      if(!firstC)firstC=carrier;
+      const mnpPt=carrier.mnpPt;
+      if(plan.sbBonus){
+        if(isExistingSB){totalMnp+=mnpPt*n;totalExist+=plan.sbBonus.existingPt*n;}
+        else{totalMnp+=mnpPt*n;totalSim+=plan.sbBonus.newPt*n;}
+      } else {
+        // 全プランでMNP ptを表示（au系プランでもSB/YM MNPは表示）
+        if(mnpPt>0)totalMnp+=mnpPt*n;
+      }
+    }
+    if(!firstC||(totalMnp===0&&totalSim===0&&totalExist===0))return null;
+    if(plan.sbBonus){
+      if(isExistingSB)return{type:"existing",mnpPt:totalMnp,simultaneousPt:0,totalImmediate:totalMnp,existingPayPay:totalExist,carrier:firstC};
+      return{type:"new",mnpPt:totalMnp,simultaneousPt:totalSim,totalImmediate:totalMnp+totalSim,existingPayPay:0,carrier:firstC};
+    }
+    return{type:"mnponly",mnpPt:totalMnp,simultaneousPt:0,totalImmediate:totalMnp,existingPayPay:0,carrier:firstC};
+  };
+
+  const getAUBonus = (planKey) => {
+    const auCarriers = Object.entries(mobileCarriers).filter(([id,n])=>n>0&&MOBILE_CARRIERS.find(c=>c.id===id&&c.type==="au"));
+    if(auCarriers.length===0) return null;
+    // 全プランでau/UQ MNP ptを表示（auBonus flagは不要）
+    let total=0,firstC=null;
+    for(const [id,n] of auCarriers){const carrier=MOBILE_CARRIERS.find(c=>c.id===id);if(!firstC)firstC=carrier;if(carrier.mnpPt>0)total+=carrier.mnpPt*n;}
+    if(total===0||!firstC) return null;
+    return{mnpPt:total,totalImmediate:total,carrier:firstC,note:"au/UQ MNP "+total.toLocaleString()+"pt"};
+  };
+
+  const getDocomoBonus = () => {
+    const docCarriers = Object.entries(mobileCarriers).filter(([id,n])=>n>0&&MOBILE_CARRIERS.find(c=>c.id===id&&c.type==="docomo"));
+    if(docCarriers.length===0) return null;
+    let total=0,firstC=null;
+    for(const [id,n] of docCarriers){const carrier=MOBILE_CARRIERS.find(c=>c.id===id);if(!firstC)firstC=carrier;if(carrier.mnpPt>0)total+=carrier.mnpPt*n;}
+    if(total===0||!firstC) return null;
+    return{mnpPt:total,totalImmediate:total,carrier:firstC,note:"docomo MNP "+total.toLocaleString()+"pt"};
+  };
+
+
+  const PHONE_OPTS = [
+    {id:"nd",name:"ナンバーディスプレイ",monthly:220,note:"発信者番号表示"},
+    {id:"cw",name:"キャッチホン",monthly:110,note:"通話中の着信を知らせる"},
+    {id:"tf",name:"転送電話",monthly:220,note:"不在時に指定番号へ転送"},
+    {id:"vm",name:"留守番電話",monthly:330,note:"伝言メッセージ録音"},
+    {id:"3w",name:"三者通話",monthly:220,note:"3人での同時通話"},
+    {id:"nr",name:"ナンバーリクエスト",monthly:110,note:"番号非通知の着信拒否"},
+  ];
+  const TV_KOJI = [
+    {id:"s1",label:"ネット同時・1台（共聴なし）",fee:13200,note:"最も一般的・割安"},
+    {id:"sM",label:"ネット同時・2〜3台（共聴あり）",fee:26400,note:"後から追加不可のため要選択"},
+    {id:"a1",label:"テレビ単独・1台（共聴なし）",fee:18150,note:"ネット開通後の申込は割高"},
+    {id:"aM",label:"テレビ単独・2〜3台（共聴あり）",fee:31350,note:"後から申込・複数台で最も割高"},
+  ];
+  // 電話オプション料金（基本料除く）
+  const phoneOptsCost = phoneEnabled
+    ? PHONE_OPTS.filter(o=>phoneOptions[o.id]).reduce((s,o)=>s+o.monthly,0) : 0;
+  // プランごとの電話月額計算関数
+  // SoftBank光+おうち割時はBBフォンが必須OPTに含まれるため電話基本料(550円)は加算しない
+  const getPhoneCost = (planKey, isSetDiscount) => {
+    if (!phoneEnabled) return 0;
+    const plan = PLANS[planKey];
+    const baseIncluded = isSetDiscount && plan.setDiscount && plan.setDiscount.includesPhone;
+    const base = baseIncluded ? 0 : 550;
+    return base + phoneOptsCost;
+  };
+  const TV_MONTHLY = {softbank:990,docomo:990,au:1628,biglobe:990,rakuten:990};
+  const getJcomTvCost = () => {const p=(PLANS.jcom.jcomTvPlans||[]).find(p=>p.id===jcomTvPlan);if(!p)return 1100;return housingType==="home"?p.home:p.apt;};
+  const tvMonthlyCost = (tvEnabled&&housingType!=="router") ? 990 : 0;
+  const tvKojiCost = tvEnabled && housingType !== "router"
+    ? (TV_KOJI.find(p=>tvKojiPattern[p.id])||{fee:0}).fee : 0;
+
+  const plansFixed = useMemo(() => {
+    return availablePlans.map(([key, p]) => {
+      const idx  = getPlanIdx(key);
+      const pp   = p.pricingPlans[idx];
+      const tier = pp[housingType];
+      if (!tier) return null;
+      const setD      = p.setDiscount;
+      const optCost   = showSetDiscount ? setD.optionTotal : 0;
+      const phoneMonthlyCost = getPhoneCost(key, showSetDiscount);
+      const planTvCost = (!tvEnabled||housingType==="router")?0:(key==="jcom"?getJcomTvCost():(TV_MONTHLY[key]||990));
+      const monthly   = tier.monthly + optCost + phoneMonthlyCost + planTvCost;
+      const tvMonthlyCost = planTvCost;
+      const smartDisc = showSetDiscount ? setD.discountPerLine : 0;
+      const campaigns = getApplicableCampaigns(key, p.campaigns);
+      const hasNorikae = campaigns.some(c => c.type === "norikae");
+      const sbBonus   = getSBBonus(key);
+      const auBonus   = getAUBonus(key);
+      const docomoBonus = getDocomoBonus();
+      return { key, plan:p, tier, monthly, campaigns, hasNorikae, setD, pp, optCost, smartDisc, sbBonus, auBonus, docomoBonus, phoneMonthlyCost, tvMonthlyCost };
+    }).filter(Boolean);
+  }, [availablePlans, currentProvider, showSetDiscount, housingType, selectedPlanIdx, mobileCarriers, phoneEnabled, phoneOptions, tvEnabled, jcomTvPlan]);
+
+  const minMonthly = useMemo(() => plansFixed.length ? Math.min(...plansFixed.map(p=>p.monthly)) : 0, [plansFixed]);
+  const maxMonthly = useMemo(() => plansFixed.length ? Math.max(...plansFixed.map(p=>p.monthly)) : 0, [plansFixed]);
+
+  const css = `
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0;}
+    .fade{animation:fadeUp .26s ease both;}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    .bsel{transition:all .12s;cursor:pointer;user-select:none;}
+    .bsel:hover{filter:brightness(0.96);transform:scale(1.02);}
+    .pcard{transition:box-shadow .18s,transform .15s;}
+    .pcard:hover{transform:translateY(-2px);}
+    .crow{transition:background .1s;cursor:pointer;}
+    .crow:hover{background:rgba(0,0,0,0.03)!important;}
+    .ptab{transition:all .13s;cursor:pointer;user-select:none;}
+    .ptab:hover{filter:brightness(0.95);}
+  `;
+
+  return (
+    <>
+      {expandedKoji&&PLANS[expandedKoji]&&PLANS[expandedKoji].kojiTabs&&(
+        <div onClick={()=>setExpandedKoji(null)}
+          style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.55)",zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:640,maxHeight:"82vh",display:"flex",flexDirection:"column",boxShadow:"0 -4px 24px rgba(0,0,0,0.18)"}}>
+            <div style={{padding:"14px 16px 10px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+              <div>
+                <div style={{fontSize:9,color:"#0ea5e9",letterSpacing:2,marginBottom:2}}>工事費の詳細</div>
+                <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>{PLANS[expandedKoji].name}</div>
+              </div>
+              <div onClick={()=>setExpandedKoji(null)} style={{width:32,height:32,borderRadius:"50%",background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:18,color:"#64748b",flexShrink:0}}>×</div>
+            </div>
+            <div style={{display:"flex",borderBottom:"1px solid #e2e8f0",overflowX:"auto",flexShrink:0}}>
+              {PLANS[expandedKoji].kojiTabs.map((t,ti)=>(
+                <div key={ti} onClick={()=>setKojiTab(prev=>({...prev,[expandedKoji]:ti}))}
+                  style={{flex:"0 0 auto",padding:"9px 14px",fontSize:11,fontWeight:(kojiTab[expandedKoji]??0)===ti?700:400,color:(kojiTab[expandedKoji]??0)===ti?"#0369a1":"#64748b",borderBottom:(kojiTab[expandedKoji]??0)===ti?"2px solid #0ea5e9":"2px solid transparent",cursor:"pointer",background:(kojiTab[expandedKoji]??0)===ti?"#e0f2fe":"transparent",whiteSpace:"nowrap"}}>
+                  {t.label}
+                </div>
+              ))}
+            </div>
+            <div style={{overflowY:"auto",padding:"12px 16px",flex:1}}>
+              {PLANS[expandedKoji].kojiTabs[kojiTab[expandedKoji]??0]&&(
+                <div>
+                  {(PLANS[expandedKoji].kojiTabs[kojiTab[expandedKoji]??0].items||[]).map((item,ii)=>(
+                    <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
+                      <div style={{flex:1,minWidth:0,paddingRight:8}}>
+                        <div style={{fontSize:13,color:"#1e293b",fontWeight:500}}>{item.name}</div>
+                        {item.note&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2,lineHeight:1.5}}>{item.note}</div>}
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:16,fontWeight:700,color:item.fee===0&&!item.monthly?"#16a34a":"#d97706"}}>
+                          {item.fee===0&&!item.monthly?"無料":"¥"+item.fee.toLocaleString()}
+                        </div>
+                        {item.monthly&&<div style={{fontSize:10,color:"#64748b"}}>{"月額¥"+item.monthly.toLocaleString()}</div>}
+                      </div>
+                    </div>
+                  ))}
+                  {PLANS[expandedKoji].kojiTabs[kojiTab[expandedKoji]??0].note&&(
+                    <div style={{fontSize:11,color:"#64748b",marginTop:10,padding:"8px 10px",background:"#f8fafc",borderRadius:8,lineHeight:1.7}}>{PLANS[expandedKoji].kojiTabs[kojiTab[expandedKoji]??0].note}</div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div style={{padding:"12px 16px",borderTop:"1px solid #f1f5f9",flexShrink:0}}>
+              <div onClick={()=>setExpandedKoji(null)} style={{width:"100%",padding:"11px",borderRadius:10,background:"#0ea5e9",color:"#fff",fontSize:13,fontWeight:700,textAlign:"center",cursor:"pointer"}}>閉じる</div>
+            </div>
+          </div>
+        </div>
+      )}
+    <div style={{minHeight:"100vh",background:"#f1f5f9",color:"#1e293b",fontFamily:"'Noto Sans JP',sans-serif",paddingBottom:60}}>
+      <style>{css}</style>
+      <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"12px 16px",position:"sticky",top:0,zIndex:99,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+          <div>
+            <div style={{fontSize:9,letterSpacing:3,color:"#0ea5e9",marginBottom:1}}>ビックカメラ/コジマ/ソフマップ 店頭料金 2026年5月</div>
+            <h1 style={{fontSize:"clamp(13px,3.2vw,19px)",fontWeight:900,color:"#0f172a"}}>光回線 乗り換えシミュレーター</h1>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:3}}>
+            {[1,2,3,4,5].map(s=>{
+              const done=(s===1&&currentProvider!==null)||(s===2&&housingType!==null)||(s===3&&step3Done)||(s===4&&step4Done)||(s===5);
+              const active=step===s;
+              return (
+                <div key={s} style={{display:"flex",alignItems:"center",gap:3}}>
+                  <div onClick={()=>(done||s<=step)&&setStep(s)} style={{width:26,height:26,borderRadius:"50%",background:active?"#0ea5e9":done?"#0ea5e9":"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:active||done?"#fff":"#94a3b8",cursor:"pointer",border:active?"2px solid #38bdf8":"2px solid transparent"}}>
+                    {done&&!active?"✓":s}
+                  </div>
+                  {s<5&&<div style={{width:10,height:1,background:"#e2e8f0"}}/>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:900,margin:"0 auto",padding:"14px 12px"}}>
+        <StepCard num="01" icon="📡" label="現在利用中の回線" open={step===1} done={currentProvider!==null} doneText={CURRENT_PROVIDERS.find(p=>p.id===currentProvider)?.name} onToggle={()=>setStep(1)}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {CURRENT_PROVIDERS.map(p=>{const sel=currentProvider===p.id;return(<div key={p.id} className="bsel" onClick={()=>{setCurrentProvider(p.id);setTimeout(()=>setStep(2),200);}} style={{padding:"7px 12px",borderRadius:20,border:sel?"2px solid #0ea5e9":"2px solid #e2e8f0",background:sel?"#e0f2fe":"#fff",color:sel?"#0369a1":"#64748b",fontSize:12,fontWeight:sel?700:400,cursor:"pointer"}}>{p.logo} {p.name}</div>);})}
+          </div>
+        </StepCard>
+
+        <StepCard num="02" icon="🏠" label="住居タイプを選択" open={step===2} done={housingType!==null} doneText={HOUSING_TYPES.find(h=>h.key===housingType)?.label} onToggle={()=>setStep(2)}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:9}}>
+            {HOUSING_TYPES.map(h=>{const sel=housingType===h.key;return(<div key={h.key} className="bsel" onClick={()=>{setHousingType(h.key);setTimeout(()=>setStep(3),200);}} style={{padding:"14px 11px",borderRadius:13,border:sel?"2px solid #0ea5e9":"2px solid #e2e8f0",background:sel?"#e0f2fe":"#fff",textAlign:"center",cursor:"pointer",boxShadow:sel?"0 0 12px rgba(14,165,233,0.15)":"0 1px 3px rgba(0,0,0,0.06)"}}><div style={{fontSize:26,marginBottom:5}}>{h.icon}</div><div style={{fontWeight:700,fontSize:13,color:sel?"#0369a1":"#1e293b",marginBottom:3}}>{h.label}</div><div style={{fontSize:11,color:"#94a3b8"}}>{h.desc}</div></div>);})}
+          </div>
+        </StepCard>
+
+        {housingType!==null&&(
+          <StepCard num="03" icon="📞" label="固定電話（ひかり電話）" open={step===3}
+            done={step3Done} doneText={phoneEnabled?"加入する":"加入しない"} onToggle={()=>setStep(3)}>
+            <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>ひかり電話に加入しますか？</div>
+            <div style={{display:"flex",gap:8,marginBottom:12}}>
+              {[{v:false,label:"加入しない",icon:"✗"},{v:true,label:"加入する",icon:"📞"}].map(o=>(
+                <div key={String(o.v)} className="bsel" onClick={()=>setPhoneEnabled(o.v)}
+                  style={{flex:1,padding:"12px",borderRadius:12,border:phoneEnabled===o.v?"2px solid #0ea5e9":"2px solid #e2e8f0",background:phoneEnabled===o.v?"#e0f2fe":"#fff",textAlign:"center",cursor:"pointer"}}>
+                  <div style={{fontSize:22,marginBottom:4}}>{o.icon}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:phoneEnabled===o.v?"#0369a1":"#1e293b"}}>{o.label}</div>
+                </div>
+              ))}
+            </div>
+            {phoneEnabled&&(
+              <div className="fade">
+                <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8}}>オプション（複数選択可）</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+                  {PHONE_OPTS.map(opt=>{
+                    const sel=!!phoneOptions[opt.id];
+                    return(
+                      <div key={opt.id} className="bsel" onClick={()=>setPhoneOptions(prev=>({...prev,[opt.id]:!prev[opt.id]}))}
+                        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:10,border:sel?"1.5px solid #0ea5e9":"1.5px solid #e2e8f0",background:sel?"#e0f2fe":"#fff",cursor:"pointer"}}>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:sel?700:400,color:sel?"#0369a1":"#1e293b"}}>{opt.name}</div>
+                          <div style={{fontSize:10,color:"#94a3b8"}}>{opt.note}</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:13,fontWeight:700,color:sel?"#0369a1":"#64748b"}}>+{opt.monthly}円/月</div>
+                          <div style={{fontSize:16}}>{sel?"✅":"⬜"}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{padding:"8px 12px",background:"#f0f9ff",borderRadius:8,fontSize:11,color:"#0369a1",marginBottom:10}}>
+                  📞 通話料：市内8.8円/3分・市外17.6円/3分・携帯17.6円/1分
+                </div>
+              </div>
+            )}
+            <div className="bsel" onClick={()=>{setStep3Done(true);setTimeout(()=>setStep(4),200);}}
+              style={{width:"100%",padding:"12px",borderRadius:10,background:"#0ea5e9",color:"#fff",fontSize:13,fontWeight:700,textAlign:"center",cursor:"pointer"}}>
+              次へ →
+            </div>
+          </StepCard>
+        )}
+
+        {step3Done&&(
+          <StepCard num="04" icon="📺" label="テレビオプション（光テレビ）" open={step===4}
+            done={step4Done} doneText={tvEnabled?"加入する":"加入しない"} onToggle={()=>setStep(4)}>
+            <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>光テレビに加入しますか？</div>
+            {housingType==="router"&&(
+              <div style={{padding:"10px 12px",background:"#fff7ed",border:"1px solid #fde68a",borderRadius:8,fontSize:11,color:"#92400e",marginBottom:12}}>
+                ⚠️ ホームルーターは光テレビサービス非対応です
+              </div>
+            )}
+            <div style={{display:"flex",gap:8,marginBottom:12}}>
+              {[{v:false,label:"加入しない",icon:"✗"},{v:true,label:"加入する",icon:"📺",disabled:housingType==="router"}].map(o=>(
+                <div key={String(o.v)} className="bsel"
+                  onClick={()=>!o.disabled&&setTvEnabled(o.v)}
+                  style={{flex:1,padding:"12px",borderRadius:12,border:tvEnabled===o.v?"2px solid #0ea5e9":"2px solid #e2e8f0",background:tvEnabled===o.v?"#e0f2fe":o.disabled?"#f8fafc":"#fff",textAlign:"center",cursor:o.disabled?"not-allowed":"pointer",opacity:o.disabled?0.4:1}}>
+                  <div style={{fontSize:22,marginBottom:4}}>{o.icon}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:tvEnabled===o.v?"#0369a1":"#1e293b"}}>{o.label}</div>
+                </div>
+              ))}
+            </div>
+            {tvEnabled&&housingType!=="router"&&(
+              <div className="fade">
+                {availablePlans.some(([k])=>k==="jcom")&&(
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:6}}>📺 J:COMテレビプランを選択</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {(PLANS.jcom.jcomTvPlans||[]).map(tp=>{
+                        const sel=jcomTvPlan===tp.id;
+                        const cost=housingType==="home"?tp.home:tp.apt;
+                        return(
+                          <div key={tp.id} className="bsel" onClick={()=>setJcomTvPlan(tp.id)}
+                            style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderRadius:10,border:sel?"1.5px solid #C0392B":"1.5px solid #e2e8f0",background:sel?"#fdf2f2":"#fff",cursor:"pointer"}}>
+                            <div>
+                              <div style={{fontSize:12,fontWeight:sel?700:400,color:sel?"#C0392B":"#1e293b"}}>{tp.label}</div>
+                              <div style={{fontSize:10,color:"#94a3b8"}}>{tp.note}</div>
+                            </div>
+                            <div style={{fontSize:14,fontWeight:700,color:sel?"#C0392B":"#d97706",flexShrink:0,marginLeft:8}}>{"¥"+cost.toLocaleString()}/月</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8}}>工事パターンを選択</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+                  {TV_KOJI.map(p=>{
+                    const sel=!!tvKojiPattern[p.id];
+                    return(
+                      <div key={p.id} className="bsel" onClick={()=>setTvKojiPattern({[p.id]:true})}
+                        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:10,border:sel?"1.5px solid #0ea5e9":"1.5px solid #e2e8f0",background:sel?"#e0f2fe":"#fff",cursor:"pointer"}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:sel?700:400,color:sel?"#0369a1":"#1e293b"}}>{p.label}</div>
+                          <div style={{fontSize:10,color:"#94a3b8"}}>{p.note}</div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0,marginLeft:8}}>
+                          <div style={{fontSize:14,fontWeight:700,color:sel?"#0369a1":"#d97706"}}>{"¥"+p.fee.toLocaleString()}</div>
+                          <div style={{fontSize:9,color:"#94a3b8"}}>工事費</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{padding:"10px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,fontSize:11,color:"#92400e",marginBottom:12}}>
+                  <div style={{fontWeight:700,marginBottom:4}}>📺 光テレビ共通費用</div>
+                  <div>月額：<strong>990円</strong>（地デジ・BS視聴）</div>
+                  <div>登録料：<strong>3,080円</strong>（初回のみ・スカパーJSAT）</div>
+                  <div>4台目以降：+5,500円/台、土日祝日工事：+3,300円</div>
+                  <div style={{color:"#b45309",marginTop:4}}>※auひかりのテレビは地デジ・BS非対応（VODサービス）</div>
+                </div>
+              </div>
+            )}
+            <div className="bsel" onClick={()=>{setStep4Done(true);setTimeout(()=>setStep(5),200);}}
+              style={{width:"100%",padding:"12px",borderRadius:10,background:"#0ea5e9",color:"#fff",fontSize:13,fontWeight:700,textAlign:"center",cursor:"pointer"}}>
+              結果を見る →
+            </div>
+          </StepCard>
+        )}
+
+        {currentProvider!==null&&housingType!==null&&step4Done&&step>=5&&(
+          <div className="fade">
+            <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:12,padding:"12px 14px",marginBottom:12,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:10}}>⚙️ 表示設定</div>
+              <Tog label="スマホセット割を適用（必須オプション込みで計算）" value={showSetDiscount} onChange={setShowSetDiscount} color="#0ea5e9"/>
+              <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f1f5f9"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:6,display:"flex",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                  📱 スマホ当日同時MNP加入
+                  {isExistingSB&&<span style={{fontSize:10,background:"#e0f2fe",color:"#0369a1",borderRadius:6,padding:"1px 7px"}}>既存SBユーザー：後日15,000PayPayPt対象</span>}
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                    {MOBILE_CARRIERS.filter(c=>c.id!=="none").map(c=>{
+                      const lines=mobileCarriers[c.id]||0;
+                      const sel=lines>0;
+                      return(
+                        <div key={c.id} style={{display:"flex",alignItems:"center",gap:7}}>
+                          <div className="bsel" onClick={()=>setMobileCarriers(prev=>{const n={...prev};if(n[c.id])delete n[c.id];else n[c.id]=1;return n;})}
+                            style={{flex:1,padding:"6px 11px",borderRadius:12,border:sel?"2px solid #0ea5e9":"2px solid #e2e8f0",background:sel?"#e0f2fe":"#fff",color:sel?"#0369a1":"#64748b",fontSize:11,fontWeight:sel?700:400,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                            <span>{c.logo} {c.name}{c.mnpPt>0?" +"+c.mnpPt.toLocaleString()+"pt":""}</span>
+                            <span style={{fontSize:13}}>{sel?"✅":"⬜"}</span>
+                          </div>
+                          {sel&&(
+                            <div style={{display:"flex",gap:4,flexShrink:0}}>
+                              {[1,2,3,4,5].map(n=>(<div key={n} className="bsel" onClick={()=>setMobileCarriers(prev=>({...prev,[c.id]:n}))}
+                                style={{width:26,height:26,borderRadius:"50%",border:lines===n?"2px solid #0ea5e9":"2px solid #e2e8f0",background:lines===n?"#0ea5e9":"#fff",color:lines===n?"#fff":"#64748b",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{n}</div>))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {totalMNPLines>0&&(
+                  <div style={{padding:"5px 10px",background:"#f0f9ff",borderRadius:8,fontSize:11,color:"#0369a1",marginTop:6}}>
+                    {"MNP合計："+totalMNPLines+"回線 "+carrierSummaryArr.join("・")}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {plansFixed.map(({key,plan,tier,monthly,campaigns,hasNorikae,setD,pp,optCost,smartDisc,sbBonus,auBonus,docomoBonus,phoneMonthlyCost,tvMonthlyCost})=>{
+                const best=monthly===minMonthly;
+                const isCurrent=currentProvider===key;
+                const barPct=maxMonthly>minMonthly?Math.round(((monthly-minMonthly)/(maxMonthly-minMonthly))*75+25):100;
+                const norikae=campaigns.filter(c=>c.type==="norikae");
+                const isExpSet=expandedPlan===key;
+                const planOptions=plan.pricingPlans;
+                const allCampaigns=plan.campaigns;
+                const storeCamp = campaigns.find(c=>c.isStore)
+                  || (!isNewContract
+                      ? allCampaigns.find(c=>
+                          c.isStore &&
+                          c.type==="norikae" &&
+                          !(c.excludeFrom||[]).includes(currentProvider)
+                        )
+                      : null)
+                  || null;
+                const bicPtCamps=campaigns.filter(c=>c.isBicPt);
+                const storeAmt=storeCamp?storeCamp.maxAmount:0;
+                const bicPtTotal=bicPtCamps.reduce((s,c)=>s+c.maxAmount,0);
+                const hasBonus=(sbBonus&&(sbBonus.totalImmediate>0||sbBonus.existingPayPay>0))||(auBonus&&auBonus.totalImmediate>0)||(docomoBonus&&docomoBonus.totalImmediate>0);
+                const is1YenPlan = key==="docomoHome" && tier.monthly===3755;
+                const isWimaxIkkatsu = key==="wimax" && tier.monthly===4268;
+                const effectiveStoreCamp = (is1YenPlan||isWimaxIkkatsu) ? null : storeCamp;
+                const effectiveStoreAmt = effectiveStoreCamp ? effectiveStoreCamp.maxAmount : 0;
+
+                return (
+                  <div key={key} className="pcard" style={{background:"#fff",borderRadius:16,overflow:"hidden",border:best?"2px solid "+plan.color:"1px solid #e2e8f0",boxShadow:best?"0 4px 20px "+plan.color+"25":"0 1px 4px rgba(0,0,0,0.06)"}}>
+
+                    {/* ① ヘッダー */}
+                    <div style={{background:"linear-gradient(135deg,"+plan.color+"dd,"+plan.color+"99)",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:9}}>
+                        <div style={{fontSize:22,width:38,height:38,background:"rgba(255,255,255,0.25)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{plan.logo}</div>
+                        <div>
+                          <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",marginBottom:2}}>
+                            <span style={{fontWeight:900,fontSize:14,color:"#fff"}}>{plan.name}</span>
+                            {best&&<Chip text="✦ 最安" bg="rgba(0,0,0,0.3)" col="#fde68a"/>}
+                            {isCurrent&&<Chip text="現在利用中" bg="rgba(0,0,0,0.3)" col="#6ee7b7"/>}
+                            {tier.cancelFee===0&&<Chip text="縛りなし" bg="rgba(0,0,0,0.3)" col="#c4b5fd"/>}
+                            {hasNorikae&&<Chip text="乗り換え特典あり" bg="rgba(0,0,0,0.3)" col="#fca5a5"/>}
+                          </div>
+                          <div style={{fontSize:10,color:"rgba(255,255,255,0.75)"}}>{pp.speed}</div>
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontSize:9,color:"rgba(255,255,255,0.7)",marginBottom:1}}>月額合計（税込）</div>
+                        <div style={{fontSize:26,fontWeight:900,color:"#fff",lineHeight:1}}>¥{monthly.toLocaleString()}<span style={{fontSize:11,fontWeight:400,color:"rgba(255,255,255,0.75)"}}>/月</span></div>
+                        <div style={{fontSize:9,color:"rgba(255,255,255,0.65)"}}>ネット¥{(tier.monthly+optCost).toLocaleString()}{phoneMonthlyCost>0&&"＋電話¥"+phoneMonthlyCost}{tvMonthlyCost>0&&"＋TV¥"+tvMonthlyCost}</div>
+                      </div>
+                    </div>
+                    <div style={{padding:"6px 14px 0",background:"#fafafa",borderTop:"1px solid #f0f4f8"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <div style={{flex:1,height:5,background:"#e2e8f0",borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",borderRadius:3,width:barPct+"%",background:best?"linear-gradient(90deg,#22c55e,#0ea5e9)":"linear-gradient(90deg,"+plan.color+"88,"+plan.color+")",transition:"width .5s ease"}}/>
+                        </div>
+                        <span style={{fontSize:10,color:best?"#16a34a":"#94a3b8",fontWeight:best?700:400,whiteSpace:"nowrap",minWidth:60,textAlign:"right"}}>{best?"✦ 最安":"+¥"+(monthly-minMonthly).toLocaleString()}</span>
+                      </div>
+                      <div onClick={()=>setExpandedPlan(isExpSet?null:key)} style={{textAlign:"center",padding:"5px 0",cursor:"pointer",borderTop:"1px solid #f1f5f9"}}>
+                        <span style={{fontSize:11,color:"#0ea5e9",fontWeight:600}}>{isExpSet?"▲ 詳細を閉じる":"▼ 詳細・工事費・キャンペーンを見る"}</span>
+                      </div>
+                    </div>
+                    {isExpSet&&(<div className="fade">
+                    {/* ② 料金詳細 */}
+                    <div style={{padding:"8px 14px 10px",background:"#fafafa"}}>
+                      {planOptions.length>1&&(
+                        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8}}>
+                          {planOptions.map((pp2,i)=>{
+                            if(!pp2[housingType])return null;
+                            const st=getPlanIdx(key)===i;
+                            return(<div key={i} className="ptab" onClick={()=>setSelectedPlanIdx(prev=>({...prev,[key]:i}))} style={{fontSize:11,padding:"3px 10px",borderRadius:10,border:st?"1.5px solid "+plan.color:"1.5px solid #e2e8f0",background:st?plan.color+"18":"#fff",color:st?plan.color:"#64748b",fontWeight:st?700:400}}>{pp2.label}</div>);
+                          })}
+                        </div>
+                      )}
+                      {showSetDiscount&&smartDisc>0&&(
+                        <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:20,marginBottom:8}}>
+                          <span style={{fontSize:11,color:"#0369a1"}}>📱 スマホ料金</span>
+                          <span style={{fontSize:14,fontWeight:900,color:"#0369a1"}}>-{smartDisc.toLocaleString()}円/月</span>
+                          <span style={{fontSize:10,color:"#64748b"}}>割引（参考）</span>
+                        </div>
+                      )}
+                      <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:8}}>
+                        <InfoPill label="事務手数料" value={"¥"+tier.jimufee.toLocaleString()}/>
+                        {tier.kojiHi>0?<InfoPill label="工事費" value={"¥"+tier.kojiHi.toLocaleString()+"〜"} warn/>:<InfoPill label="工事費" value="不要" green/>}
+                        <InfoPill label="縛り" value={tier.years===0?"なし":tier.years+"年"} warn={tier.years>0}/>
+                      </div>
+                      {tier.kojiNote&&<div style={{fontSize:10,color:"#0891b2",marginBottom:6,paddingLeft:4,borderLeft:"2px solid #bae6fd"}}>{tier.kojiNote}</div>}
+                      {tier.kojiHi>0&&(
+                        <div style={{marginBottom:8}}>
+                          <div onClick={()=>setExpandedKoji(key)}
+                            style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,cursor:"pointer",fontSize:11,color:"#0369a1",fontWeight:600}}>
+                            {"🔧 工事費の詳細を見る"}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ③ 還元サマリー */}
+                    {(effectiveStoreAmt>0||hasBonus||bicPtTotal>0)&&(
+                      <div style={{padding:"10px 14px",background:"#fffbeb",borderTop:"1px solid #fde68a"}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"#92400e",marginBottom:8}}>🎁 当日加入での還元・特典</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {/* 家電値引き（SoftBank等） */}
+                          {effectiveStoreAmt>0&&(
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",background:"#fff",borderRadius:10,border:"1px solid #fde68a"}}>
+                              <div style={{fontSize:11,color:"#92400e",fontWeight:600}}>
+                                🏪 家電{effectiveStoreCamp.type==="norikae"?"値引き（乗り換え）":effectiveStoreCamp.type==="newonly"?"値引き（新規）":"値引き"}
+                              </div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:26,fontWeight:900,color:"#b45309"}}>¥{effectiveStoreAmt.toLocaleString()}</span>
+                                <span style={{fontSize:11,color:"#b45309",marginLeft:2}}>引き</span>
+                              </div>
+                            </div>
+                          )}
+                          {/* ビックポイント還元（ドコモ光等） */}
+                          {bicPtCamps.map(c=>(
+                            <div key={c.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",background:"#fff",borderRadius:10,border:"1px solid #fde68a"}}>
+                              <div style={{fontSize:11,color:"#92400e",fontWeight:600}}>
+                                🎁 {c.type==="norikae"?"乗り換え":"新規"}：ビックP
+                                {c.id.includes("kaden")&&<span style={{fontSize:10,color:"#64748b",marginLeft:4}}>（家電同時購入）</span>}
+                              </div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:26,fontWeight:900,color:"#b45309"}}>{c.maxAmount.toLocaleString()}</span>
+                                <span style={{fontSize:11,color:"#b45309",marginLeft:2}}>pt</span>
+                              </div>
+                            </div>
+                          ))}
+                          {/* MNP即時ポイント */}
+                          {sbBonus&&sbBonus.totalImmediate>0&&(
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",background:"#fff",borderRadius:10,border:"1px solid #bae6fd"}}>
+                              <div style={{fontSize:11,color:"#0369a1",fontWeight:600}}>
+                                {"📱 SB/YM MNP"}
+                                {sbBonus.type==="new"&&<span style={{marginLeft:6,fontSize:9,background:"#dcfce7",color:"#16a34a",borderRadius:4,padding:"1px 5px"}}>新規/乗り換え</span>}
+                                {sbBonus.type==="existing"&&<span style={{marginLeft:6,fontSize:9,background:"#e0f2fe",color:"#0369a1",borderRadius:4,padding:"1px 5px"}}>MNP即時</span>}
+                                {sbBonus.type==="new"&&<div style={{fontSize:9,color:"#64748b",marginTop:2}}>MNP {sbBonus.mnpPt.toLocaleString()}pt ＋ 同時加入 {sbBonus.simultaneousPt.toLocaleString()}pt</div>}
+                              </div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:26,fontWeight:900,color:"#0369a1"}}>{sbBonus.totalImmediate.toLocaleString()}</span>
+                                <span style={{fontSize:11,color:"#0369a1",marginLeft:2}}>pt</span>
+                              </div>
+                            </div>
+                          )}
+                          {/* 後日PayPay（既存SBユーザー） */}
+                          {sbBonus&&sbBonus.existingPayPay>0&&(
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",background:"#fff",borderRadius:10,border:"2px dashed #f59e0b"}}>
+                              <div style={{fontSize:11,color:"#d97706",fontWeight:600}}>💳 後日 PayPay還元</div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:26,fontWeight:900,color:"#d97706"}}>{sbBonus.existingPayPay.toLocaleString()}</span>
+                                <span style={{fontSize:11,color:"#d97706",marginLeft:2}}>PayPayPt</span>
+                              </div>
+                            </div>
+                          )}
+                          {/* au/UQ MNPポイント */}
+                          {auBonus&&auBonus.totalImmediate>0&&(
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",background:"#fff",borderRadius:10,border:"1px solid #fed7aa"}}>
+                              <div style={{fontSize:11,color:"#c2410c",fontWeight:600}}>
+                                {"📱 au/UQ MNP"}
+                                <div style={{fontSize:9,color:"#64748b",marginTop:2}}>{"合計 "+auBonus.totalImmediate.toLocaleString()+"pt"}</div>
+                              </div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:26,fontWeight:900,color:"#c2410c"}}>{auBonus.totalImmediate.toLocaleString()}</span>
+                                <span style={{fontSize:11,color:"#c2410c",marginLeft:2}}>pt</span>
+                              </div>
+                            </div>
+                          )}
+                          {docomoBonus&&docomoBonus.totalImmediate>0&&(
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",background:"#fff",borderRadius:10,border:"1px solid #fee2e2"}}>
+                              <div>
+                                <div style={{fontSize:11,color:"#dc2626",fontWeight:600}}>{"📱 docomo MNP"}</div>
+                                <div style={{fontSize:9,color:"#64748b",marginTop:2}}>{"合計 "+docomoBonus.totalImmediate.toLocaleString()+"pt"}</div>
+                              </div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:26,fontWeight:900,color:"#dc2626"}}>{docomoBonus.totalImmediate.toLocaleString()}</span>
+                                <span style={{fontSize:11,color:"#dc2626",marginLeft:2}}>pt</span>
+                              </div>
+                            </div>
+                          )}
+                          {/* 合計 */}
+                          {((effectiveStoreAmt>0||bicPtTotal>0)&&(sbBonus&&(sbBonus.totalImmediate>0||sbBonus.existingPayPay>0)||(auBonus&&auBonus.totalImmediate>0)||(docomoBonus&&docomoBonus.totalImmediate>0)))||(bicPtTotal>0&&bicPtCamps.length>1)?(
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"linear-gradient(135deg,#fef3c7,#fde68a)",borderRadius:10,border:"2px solid #f59e0b",marginTop:2}}>
+                              <div style={{fontSize:12,fontWeight:800,color:"#92400e"}}>合計還元</div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:30,fontWeight:900,color:"#b45309"}}>¥{(effectiveStoreAmt+bicPtTotal+(sbBonus?sbBonus.totalImmediate+sbBonus.existingPayPay:0)+(auBonus?auBonus.totalImmediate:0)+(docomoBonus?docomoBonus.totalImmediate:0)).toLocaleString()}</span>
+                                <span style={{fontSize:11,color:"#b45309",marginLeft:2}}>相当</span>
+                              </div>
+                            </div>
+                          ):null}
+                        </div>
+                        {sbBonus&&sbBonus.type==="new"&&<div style={{fontSize:10,color:"#64748b",marginTop:6}}>{"💡 SB系MNP pt: "+sbBonus.mnpPt.toLocaleString()+" ＋ おうち割同時加入: "+sbBonus.simultaneousPt.toLocaleString()+"pt = 合計 "+sbBonus.totalImmediate.toLocaleString()+"pt"}</div>}
+                        {sbBonus&&sbBonus.type==="existing"&&<div style={{fontSize:10,color:"#64748b",marginTop:6}}>{"💡 既存SBユーザー：MNP "+sbBonus.mnpPt.toLocaleString()+"pt即時 ＋ 後日"+sbBonus.existingPayPay.toLocaleString()+"PayPayPt"}</div>}
+                        {sbBonus&&sbBonus.type==="mnponly"&&<div style={{fontSize:10,color:"#64748b",marginTop:6}}>{"💡 MNP "+sbBonus.mnpPt.toLocaleString()+"pt（光との同時加入ボーナスはSoftBank光/Air加入時のみ）"}</div>}
+                        {auBonus&&<div style={{fontSize:10,color:"#64748b",marginTop:6}}>💡 {auBonus.note}</div>}
+                      </div>
+                    )}
+
+                    {/* ④ セット割 */}
+                    <div style={{borderTop:"1px solid #f1f5f9"}}>
+                      <div onClick={()=>setExpandedPlan(isExpSet?null:key)} style={{padding:"8px 14px",background:"#f8fafc",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                        <div style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
+                          <span style={{fontSize:12}}>📱</span>
+                          <div style={{minWidth:0}}>
+                            <span style={{fontSize:11,fontWeight:700,color:"#0369a1"}}>{setD.name}</span>
+                            <span style={{fontSize:10,color:"#94a3b8",marginLeft:6}}>{setD.smartphones}</span>
+                          </div>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+                          <span style={{fontSize:10,fontWeight:700,color:setD.requiredOptions.length===0?"#16a34a":"#d97706",background:setD.requiredOptions.length===0?"#dcfce7":"#fef3c7",padding:"2px 7px",borderRadius:8}}>{setD.requiredOptions.length===0?"OPT不要 ✓":"必須OPTあり ⚠️"}</span>
+                          <span style={{fontSize:10,color:"#94a3b8"}}>{isExpSet?"▲":"▼"}</span>
+                        </div>
+                      </div>
+                      {isExpSet&&(
+                        <div className="fade" style={{padding:"10px 14px 12px",background:"#f0f9ff"}}>
+                          <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"6px 12px",marginBottom:8,fontSize:11}}>
+                            <span style={{color:"#64748b",fontWeight:600}}>対象スマホ</span><span style={{color:"#1e293b"}}>{setD.smartphones}</span>
+                            <span style={{color:"#64748b",fontWeight:600}}>スマホ割引</span><span style={{color:"#0369a1",fontWeight:700}}>{setD.isPointReturn?"楽天P還元 ":""}-{setD.discountPerLine.toLocaleString()}円相当/月/回線（最大{setD.maxLines}回線）</span>
+                            {setD.jimufeeDiscount&&<><span style={{color:"#16a34a",fontWeight:600}}>事務手数料割引</span><span style={{color:"#16a34a"}}>あんしん交換保証加入または指定窓口で -{setD.jimufeeDiscount}円（4,950円→3,850円）</span></>}
+                            {setD.requiredOptions.length>0&&<><span style={{color:"#d97706",fontWeight:600}}>必須オプション</span><div>{setD.requiredOptions.map(o=>(<div key={o.name} style={{color:"#92400e",marginBottom:2}}>・{o.name}（月額約{o.fee}円）</div>))}</div></>}
+                          </div>
+                          <div style={{fontSize:11,color:"#475569",lineHeight:1.8,background:"#e0f2fe",borderRadius:8,padding:"7px 10px",borderLeft:"3px solid #0ea5e9",whiteSpace:"pre-line"}}>💡 {setD.note}</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ⑤ キャンペーン */}
+                    {campaigns.length>0&&(
+                      <div style={{borderTop:"1px solid #f1f5f9"}}>
+                        <div style={{padding:"6px 14px 4px",display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:"#94a3b8"}}>キャンペーン</span>
+                          <div style={{flex:1,height:1,background:"#f1f5f9"}}/>
+                        </div>
+                        {norikae.map(c=>(<CampRow key={c.id} c={c} expanded={expandedCamp===(key+"-"+c.id)} onToggle={()=>setExpandedCamp(expandedCamp===(key+"-"+c.id)?null:(key+"-"+c.id))}/>))}
+                        {campaigns.filter(c=>c.type!=="norikae").map(c=>(<CampRow key={c.id} c={c} expanded={expandedCamp===(key+"-"+c.id)} onToggle={()=>setExpandedCamp(expandedCamp===(key+"-"+c.id)?null:(key+"-"+c.id))}/>))}
+                      </div>
+                    )}
+                    {plan.note&&<div style={{padding:"6px 14px 8px",fontSize:10,color:"#94a3b8",borderTop:"1px solid #f8fafc",background:"#fafafa"}}>{plan.note}</div>}
+                    </div>)}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{marginTop:18,padding:"10px 13px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,fontSize:10,color:"#92400e",lineHeight:1.9}}>
+              ⚠️ 料金・特典はビックカメラ/コジマ/ソフマップ店頭掲示（2026年4〜5月時点）の税込価格を基準としています。工事費は代表例であり設備状況により異なります。特典適用には条件があります。内容は予告なく変更・終了となる場合があります。詳しくはお近くの販売員にお問い合わせください。
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  </>
+  );
+}
+
+function StepCard({num,icon,label,open,done,doneText,onToggle,children}){
+  return(
+    <div style={{marginBottom:9,background:"#fff",border:open?"1px solid #0ea5e9":"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",boxShadow:open?"0 0 0 3px rgba(14,165,233,0.08)":"0 1px 3px rgba(0,0,0,0.05)"}}>
+      <div onClick={onToggle} style={{display:"flex",alignItems:"center",gap:8,padding:"11px 14px",cursor:"pointer",borderBottom:open?"1px solid #e0f2fe":"none"}}>
+        <span style={{fontSize:16}}>{icon}</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:"#0ea5e9",letterSpacing:2,marginBottom:1}}>STEP {num}</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{label}</div>
+        </div>
+        {done&&!open&&doneText&&<div style={{fontSize:11,color:"#16a34a",background:"#dcfce7",borderRadius:7,padding:"2px 8px",fontWeight:600}}>✓ {doneText}</div>}
+        <span style={{color:"#0ea5e9",fontSize:14,transform:open?"rotate(90deg)":"none",transition:"transform .16s"}}>›</span>
+      </div>
+      {open&&<div style={{padding:"12px 14px"}} className="fade">{children}</div>}
+    </div>
+  );
+}
+
+function CampRow({c,expanded,onToggle}){
+  const isN=c.type==="norikae",isNew=c.type==="newonly",isSm=c.type==="smartvalue";
+  const bg=isN?"#fff5f5":isNew?"#eff6ff":c.isStore?"#fffbeb":"transparent";
+  const nc=isN?"#dc2626":isNew?"#2563eb":c.isStore?"#b45309":"#1e293b";
+  return(
+    <div className="crow" onClick={onToggle} style={{padding:"8px 14px",borderTop:"1px solid #f1f5f9",background:bg}}>
+      <div style={{display:"flex",alignItems:"center",gap:7}}>
+        <span style={{fontSize:16,flexShrink:0}}>{c.badge}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+            <span style={{fontWeight:700,fontSize:12,color:nc}}>{c.name}</span>
+            {isN&&<span style={{fontSize:9,fontWeight:700,background:"#fee2e2",color:"#dc2626",borderRadius:5,padding:"1px 5px"}}>乗り換え限定</span>}
+            {isNew&&<span style={{fontSize:9,fontWeight:700,background:"#dbeafe",color:"#2563eb",borderRadius:5,padding:"1px 5px"}}>新規限定</span>}
+            {isSm&&<span style={{fontSize:9,fontWeight:700,background:"#fef3c7",color:"#d97706",borderRadius:5,padding:"1px 5px"}}>スマートバリュー加入必須</span>}
+          </div>
+          {expanded&&<div className="fade" style={{fontSize:11,color:"#64748b",marginTop:3,lineHeight:1.7}}>{c.desc}</div>}
+        </div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          {c.maxAmount>0&&<div style={{fontSize:15,fontWeight:900,color:c.color}}>¥{c.maxAmount.toLocaleString()}<span style={{fontSize:10,fontWeight:600}}>{c.isStore?"引き":"還元"}</span></div>}
+          {c.unit&&<div style={{fontSize:10,color:c.color,fontWeight:600}}>{c.unit}</div>}
+          <div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>{expanded?"▲閉じる":"▼詳細"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Chip({text,bg,col}){return <span style={{fontSize:9,fontWeight:700,background:bg,color:col,borderRadius:5,padding:"1px 5px",whiteSpace:"nowrap"}}>{text}</span>;}
- 
+
 function InfoPill({label,value,warn,green}){
   const col=green?"#16a34a":warn?"#d97706":"#64748b";
   const bg=green?"#dcfce7":warn?"#fef3c7":"#f8fafc";
@@ -11,7 +1179,7 @@ function InfoPill({label,value,warn,green}){
     </div>
   );
 }
- 
+
 function Tog({label,value,onChange,color}){
   return(
     <div onClick={()=>onChange(!value)} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
@@ -22,3 +1190,11 @@ function Tog({label,value,onChange,color}){
     </div>
   );
 }
+
+
+    const container = document.getElementById('root');
+    container.innerHTML = '';
+    ReactDOM.createRoot(container).render(React.createElement(App));
+  </script>
+</body>
+</html>
