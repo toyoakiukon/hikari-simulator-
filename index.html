@@ -18,6 +18,7 @@
 const CURRENT_PROVIDERS = [
   { id:"none",        name:"現在なし（新規）",   logo:"➕" },
   { id:"softbank",    name:"SoftBank光",         logo:"🔵" },
+  { id:"softbankPlus",name:"SoftBank光＋",       logo:"🔵" },
   { id:"softbankAir", name:"SoftBank Air",        logo:"📶" },
   { id:"docomo",      name:"ドコモ光",            logo:"🔴" },
   { id:"docomoHome",  name:"docomo home 5G",      logo:"🏠" },
@@ -34,7 +35,7 @@ const HOUSING_TYPES = [
   { key:"apt",    icon:"🏢", label:"マンション・集合住宅", desc:"アパート・マンション（既存配線）" },
   { key:"router", icon:"📡", label:"工事不要ルーター",     desc:"コンセントで即日利用" },
 ];
-const SB_EXISTING = ["softbank","softbankAir"];
+const SB_EXISTING = ["softbank","softbankPlus","softbankAir"];
 const MOBILE_CARRIERS = [
   { id:"none",     name:"同時契約しない",      logo:"✗" },
   { id:"softbank", name:"SoftBank（MNP）",     logo:"🔵", mnpPt:15000, type:"softbank" },
@@ -50,11 +51,11 @@ const PLANS = {
     name:"SoftBank光",logo:"🔵",color:"#003087",supportsTypes:["home","apt"],
     pricingPlans:[
       {label:"1Gbps",speed:"最大1Gbps",
-        home:{monthly:5720,jimufee:4950,kojiHi:31680,cancelFee:4180,years:2,kojiNote:"立会工事あり代表例。無派遣工事の場合は4,620円"},
-        apt: {monthly:4180,jimufee:4950,kojiHi:4620, cancelFee:4180,years:2,kojiNote:"無派遣工事の代表例。設備状況により異なる"}},
+        home:{monthly:5720,jimufee:4950,kojiHi:47520,cancelFee:4180,years:2,kojiNote:"6/1〜工事費改定。立会工事あり代表例47,520円。無派遣工事の場合は5,280円。工事費実質0円キャンペーンあり"},
+        apt: {monthly:4180,jimufee:4950,kojiHi:5280, cancelFee:4180,years:2,kojiNote:"6/1〜工事費改定。無派遣工事の代表例5,280円。設備状況により異なる"}},
       {label:"10Gbps",speed:"最大10Gbps ※提供エリアのみ",
-        home:{monthly:6930,jimufee:4950,kojiHi:31680,cancelFee:4180,years:2},
-        apt: {monthly:6930,jimufee:4950,kojiHi:4620, cancelFee:4180,years:2}},
+        home:{monthly:6930,jimufee:4950,kojiHi:47520,cancelFee:4180,years:2,kojiNote:"6/1〜工事費改定。立会工事あり47,520円"},
+        apt: {monthly:6930,jimufee:4950,kojiHi:5280, cancelFee:4180,years:2,kojiNote:"6/1〜工事費改定"}},
     ],
     setDiscount:{name:"おうち割光セット",smartphones:"SoftBank / Y!mobileの対象プラン",discountPerLine:1100,optionTotal:550,maxLines:10,
       includesPhone:true,
@@ -62,15 +63,15 @@ const PLANS = {
       note:"指定オプション3種への加入必須（月額550円〜）。BBフォン（ひかり電話）が含まれるため固定電話加入時は料金が重複しません。\nあんしん交換保証加入または指定窓口で事務手数料1,100円割引（4,950円→3,850円）。",jimufeeDiscount:1100},
     kojiTabs:[
       {label:"戸建て",items:[
-        {name:"立会あり（代表例）",fee:31680,note:"屋外・宅内工事。新規の大半"},
-        {name:"立会なし（無派遣）",fee:4620,note:"既設備あり・遠隔工事"},
+        {name:"立会あり（代表例）【6/1〜改定】",fee:47520,note:"6/1以降新規申込分。旧料金31,680円から値上げ。工事費実質0円キャンペーンで月割相殺可"},
+        {name:"立会なし（無派遣）【6/1〜改定】",fee:5280,note:"6/1以降新規申込分。旧料金4,620円から値上げ"},
         {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
-      ],note:"乗り換え新規キャンペーンで実質無料（月割相殺）"},
+      ],note:"6/1〜工事費改定。工事費実質0円キャンペーンで月割相殺可（乗り換え新規）"},
       {label:"マンション",items:[
-        {name:"無派遣工事（代表例）",fee:4620,note:"既設備あり・遠隔工事"},
-        {name:"派遣工事あり",fee:31680,note:"宅内設備新設が必要な場合"},
+        {name:"無派遣工事（代表例）【6/1〜改定】",fee:5280,note:"6/1以降新規申込分。旧料金4,620円から値上げ"},
+        {name:"派遣工事あり【6/1〜改定】",fee:47520,note:"6/1以降新規申込分。旧料金31,680円から値上げ"},
         {name:"土日祝日工事割増",fee:3300,note:"派遣工事時に追加加算"},
-      ],note:"設備状況により異なります"},
+      ],note:"設備状況により異なります。6/1〜工事費改定"},
       {label:"テレビ工事費",items:[
         {name:"ネット同時・1台",fee:13200,note:"ネット開通工事と同時が割安"},
         {name:"ネット同時・共聴設備あり",fee:29700,note:"2台以上または共聴が必要な場合"},
@@ -100,10 +101,45 @@ const PLANS = {
     ],
     sbBonus:{newPt:15000,existingPt:15000},
     campaigns:[
-      {id:"store_norikae",name:"【店頭・乗り換え】家電 33,000円引き",badge:"🏪",type:"norikae",excludeFrom:["none","softbank","softbankAir"],color:"#d97706",maxAmount:33000,isStore:true,desc:"他社から乗り換え＋当社指定家電同時購入で家電33,000円引き。乗り換え工事費サポート31,680円還元も適用可"},
+      {id:"store_norikae",name:"【店頭・乗り換え】家電 33,000円引き",badge:"🏪",type:"norikae",excludeFrom:["none","softbank","softbankAir"],color:"#d97706",maxAmount:33000,isStore:true,desc:"他社から乗り換え＋当社指定家電同時購入で家電33,000円引き。乗り換え工事費サポート47,520円還元も適用可（6/1〜改定後工事費）"},
       {id:"store_new",name:"【店頭・新規】家電 22,000円引き＋新規工事費実質0円",badge:"🏪",type:"newonly",color:"#d97706",maxAmount:22000,isStore:true,desc:"新規契約＋当社指定家電同時購入で家電22,000円引き＋新規工事費実質0円"},
       {id:"anshin",name:"あんしん乗り換えキャンペーン",badge:"🔄",type:"norikae",excludeFrom:["none","softbank","softbankAir"],color:"#dc2626",maxAmount:100000,desc:"他社違約金・撤去工事費・端末残債を最大10万円まで全額補填（証明書提出必要）"},
-    ],note:"※J:COMなど一部ケーブルライン提携局からの乗り換えはあんしん乗り換え対象外",
+    ],note:"※J:COMなど一部ケーブルライン提携局からの乗り換えはあんしん乗り換え対象外。6/1〜工事費改定（派遣47,520円・無派遣5,280円）",
+  },
+  softbankPlus:{
+    name:"SoftBank光＋",logo:"🔵",color:"#0051a8",supportsTypes:["home"],
+    pricingPlans:[
+      {label:"1Gbps",speed:"最大1Gbps",
+        home:{monthly:6050,jimufee:4950,kojiHi:47520,cancelFee:6050,years:2,kojiNote:"戸建て向け一部エリア限定（東京・愛知・大阪等）。工事費実質0円キャンペーンあり"}},
+      {label:"2.5Gbps",speed:"最大2.5Gbps（新設）",
+        home:{monthly:6050,jimufee:4950,kojiHi:47520,cancelFee:6050,years:2,kojiNote:"2026年6月1日より提供開始。戸建て向け一部エリア限定"}},
+      {label:"10Gbps",speed:"最大10Gbps",
+        home:{monthly:6930,jimufee:4950,kojiHi:47520,cancelFee:6930,years:2,kojiNote:"戸建て向け一部エリア限定"}},
+    ],
+    setDiscount:{name:"おうち割光セット",smartphones:"SoftBank / Y!mobileの対象プラン",discountPerLine:1100,optionTotal:550,maxLines:10,
+      includesPhone:true,
+      requiredOptions:[{name:"光BBユニット＋Wi-Fiマルチパック＋BBフォン（セット）",fee:550}],
+      note:"SoftBank光＋もおうち割光セット適用可。指定オプション3種への加入必須（月額550円〜）。",jimufeeDiscount:1100},
+    kojiTabs:[
+      {label:"戸建て",items:[
+        {name:"立会あり（代表例）",fee:47520,note:"戸建て向け新規。工事費実質0円キャンペーンで月割相殺可"},
+        {name:"立会なし（無派遣）",fee:5280,note:"既設備あり・遠隔工事"},
+        {name:"土日祝日工事割増",fee:3300,note:"上記に追加加算"},
+      ],note:"2026年6月1日提供開始。戸建て向け・一部エリア限定（東京・愛知・大阪等から順次拡大）"},
+      {label:"固定電話",items:[
+        {name:"月額（光電話N）",fee:550,note:"通常の固定電話番号"},
+        {name:"月額（ホワイト光電話）",fee:513,note:"SoftBank間通話無料プラン"},
+        {name:"【フレッツ転用・光コラボ事変】工事費",fee:0,note:"0円・番号継続可"},
+        {name:"ナンバーディスプレイ",fee:220,note:"発信者番号表示"},
+        {name:"キャッチホン",fee:110,note:"通話中の着信"},
+        {name:"留守番電話",fee:330,note:"伝言メッセージ録音"},
+      ],note:"転用・事業者変更は工事費0円・番号継続可"},
+    ],
+    sbBonus:{newPt:15000,existingPt:15000},
+    campaigns:[
+      {id:"store_norikae",name:"【店頭・乗り換え】家電 33,000円引き",badge:"🏪",type:"norikae",excludeFrom:["none","softbank","softbankPlus","softbankAir"],color:"#d97706",maxAmount:33000,isStore:true,desc:"他社から乗り換え＋当社指定家電同時購入で家電33,000円引き"},
+      {id:"anshin",name:"あんしん乗り換えキャンペーン",badge:"🔄",type:"norikae",excludeFrom:["none","softbank","softbankPlus","softbankAir"],color:"#dc2626",maxAmount:100000,desc:"他社違約金・撤去工事費・端末残債を最大10万円まで全額補填"},
+    ],note:"2026年6月1日開始。戸建て向け一部エリア限定（東京・愛知・大阪等から順次拡大）。マンション向けは従来のSoftBank光（光コラボ）を利用",
   },
   docomo:{
     name:"ドコモ光",logo:"🔴",color:"#E60012",supportsTypes:["home","apt"],
